@@ -126,48 +126,9 @@ function LoginForm() {
             </button>
           </form>
 
-          {/* Akun Demo */}
-          <div className="mt-6 pt-5 border-t border-gray-100">
-            <p className="text-xs text-gray-500 font-medium mb-3 uppercase tracking-wide">Akun Demo</p>
-            <div className="space-y-2">
-              <DemoAccount
-                label="Admin"
-                email="admin@posfrozen.com"
-                password="admin123"
-                onFill={(e, p) => { setEmail(e); setPassword(p); }}
-              />
-              <DemoAccount
-                label="Kasir Cab. Utama"
-                email="kasir1@posfrozen.com"
-                password="kasir123"
-                onFill={(e, p) => { setEmail(e); setPassword(p); }}
-              />
-              <DemoAccount
-                label="Kasir Cab. 2"
-                email="kasir2@posfrozen.com"
-                password="kasir123"
-                onFill={(e, p) => { setEmail(e); setPassword(p); }}
-              />
-            </div>
-          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function DemoAccount({ label, email, password, onFill }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onFill(email, password)}
-      className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 hover:bg-blue-50 hover:border-blue-200 border border-gray-200 rounded-lg transition cursor-pointer text-left"
-    >
-      <div>
-        <p className="text-xs font-medium text-gray-700">{label}</p>
-        <p className="text-xs text-gray-400">{email}</p>
-      </div>
-      <span className="text-xs text-blue-500 font-medium">Isi otomatis →</span>
-    </button>
-  );
-}
