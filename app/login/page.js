@@ -4,7 +4,6 @@ import { Suspense, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-// Wrap the default export in Suspense so useSearchParams() is allowed
 export default function LoginPage() {
   return (
     <Suspense>
@@ -48,7 +47,6 @@ function LoginForm() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 to-blue-800 px-4">
       <div className="w-full max-w-md">
-        {/* Logo / Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-white rounded-2xl shadow-lg mb-4">
             <span className="text-3xl">🧊</span>
@@ -57,7 +55,6 @@ function LoginForm() {
           <p className="text-blue-200 text-sm mt-1">Sistem Kasir Multi-Cabang</p>
         </div>
 
-        {/* Card Login */}
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <h2 className="text-xl font-semibold text-gray-800 mb-6">Masuk ke Akun</h2>
 
@@ -70,10 +67,7 @@ function LoginForm() {
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label
-                htmlFor="email"
-                className="block text-sm font-medium text-gray-700 mb-1.5"
-              >
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1.5">
                 Email
               </label>
               <input
@@ -89,10 +83,7 @@ function LoginForm() {
             </div>
 
             <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-gray-700 mb-1.5"
-              >
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1.5">
                 Password
               </label>
               <input
@@ -125,10 +116,8 @@ function LoginForm() {
               )}
             </button>
           </form>
-
         </div>
       </div>
     </div>
   );
 }
-
