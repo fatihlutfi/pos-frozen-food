@@ -1,0 +1,87 @@
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import prisma from "@/lib/prisma";
+import { NextResponse } from "next/server";
+
+function adminOnly(session) {
+  if (!session || session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+}
+
+// GET /api/admin/branches/[id] — ringkasan stok cabang
+export async function GET(req, { params }) {
+  const session = await getServerSession(authOptions);
+  const guard = adminOnly(session);
+  if (guard) return guard;
+
+  const { id } = await params;
+
+  const branch = await prisma.branch.findUnique({ where: { id } });
+  if (!branch) return NextResponse.json({ error: "Cabang tidak ditemukan" }, { status: 404 });
+
+  const stocks = await prisma.stock.findMany({
+    where: { branchId: id },
+    include: {
+      product: {
+        select: { name: true, isActive: true, category: { select: { name: true } } },
+      },
+    },
+    orderBy: { quantity: "asc" },
+  });
+
+  const totalProducts  = stocks.length;
+  const totalUnits     = stocks.reduce((s, st) => s + st.quantity, 0);
+  const outOfStock     = stocks.filter((st) => st.quantity === 0).length;
+  const lowStock       = stocks.filter((st) => st.quantity > 0 && st.quantity <= 20).length;
+
+  return NextResponse.json({
+    branch: { id: branch.id, name: branch.name },
+    summary: { totalProducts, totalUnits, outOfStock, lowStock },
+    stocks: stocks.map((st) => ({
+      productName: st.product.name,
+      categoryName: st.product.category.name,
+      isActive: st.product.isActive,
+      quantity: st.quantity,
+      lowStockAlert: st.lowStockAlert,
+    })),
+  });
+}
+
+// PATCH /api/admin/branches/[id] — update name/address/phone/isActive
+export async function PATCH(req, { params }) {
+  const session = await getServerSession(authOptions);
+  const guard = adminOnly(session);
+  if (guard) return guard;
+
+  const { id } = await params;
+  const body = await req.json();
+
+  try {
+    const branch = await prisma.branch.findUnique({ where: { id } });
+    if (!branch) return NextResponse.json({ error: "Cabang tidak ditemukan" }, { status: 404 });
+
+    // Cek duplikat nama jika name berubah
+    if (body.name && body.name.trim() !== branch.name) {
+      const dup = await prisma.branch.findUnique({ where: { name: body.name.trim() } });
+      if (dup) return NextResponse.json({ error: "Nama cabang sudah digunakan" }, { status: 409 });
+    }
+
+    const data = {};
+    if (body.name !== undefined)     data.name    = body.name.trim();
+    if (body.address !== undefined)  data.address = body.address?.trim() || null;
+    if (body.phone !== undefined)    data.phone   = body.phone?.trim() || null;
+    if (body.isActive !== undefined) data.isActive = body.isActive;
+
+    const updated = await prisma.branch.update({
+      where: { id },
+      data,
+      include: { _count: { select: { users: true, transactions: true } } },
+    });
+
+    return NextResponse.json(updated);
+  } catch (e) {
+    console.error("[PATCH /api/admin/branches/[id]]", e);
+    return NextResponse.json({ error: "Gagal mengupdate cabang" }, { status: 500 });
+  }
+}

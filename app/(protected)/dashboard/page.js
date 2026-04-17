@@ -1,0 +1,322 @@
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import prisma from "@/lib/prisma";
+import { formatRupiah, formatDateTime, startOfToday } from "@/lib/format";
+import Link from "next/link";
+
+export const metadata = { title: "Dashboard — POS Frozen Food" };
+
+async function getDashboardStats(session) {
+  const today = startOfToday();
+  const isAdmin = session.user.role === "ADMIN";
+  const branchFilter = isAdmin ? {} : { branchId: session.user.branchId };
+
+  // Total penjualan & jumlah transaksi hari ini
+  const todayStats = await prisma.transaction.aggregate({
+    where: { status: "COMPLETED", createdAt: { gte: today }, ...branchFilter },
+    _sum: { grandTotal: true },
+    _count: { id: true },
+  });
+
+  // Total penjualan bulan ini
+  const firstOfMonth = new Date();
+  firstOfMonth.setDate(1);
+  firstOfMonth.setHours(0, 0, 0, 0);
+
+  const monthStats = await prisma.transaction.aggregate({
+    where: { status: "COMPLETED", createdAt: { gte: firstOfMonth }, ...branchFilter },
+    _sum: { grandTotal: true },
+  });
+
+  // Stok menipis — cek per cabang (bukan total gabungan)
+  // Admin: semua cabang, Kasir: cabangnya saja
+  const LOW_STOCK_THRESHOLD = 20;
+  const allStocks = await prisma.stock.findMany({
+    where: branchFilter,
+    select: {
+      quantity: true,
+      lowStockAlert: true,
+      product: { select: { name: true } },
+      branch: { select: { name: true } },
+    },
+  });
+
+  const lowStockItems = allStocks
+    .filter((s) => s.quantity <= LOW_STOCK_THRESHOLD)
+    .sort((a, b) => a.quantity - b.quantity); // paling sedikit dulu
+
+  // Transaksi terbaru (5 terakhir)
+  const recentTransactions = await prisma.transaction.findMany({
+    where: { ...branchFilter },
+    orderBy: { createdAt: "desc" },
+    take: 5,
+    include: {
+      user: { select: { name: true } },
+      branch: { select: { name: true } },
+    },
+  });
+
+  // Cabang aktif (admin only)
+  const branchCount = isAdmin ? await prisma.branch.count({ where: { isActive: true } }) : null;
+
+  // Net profit (admin only) — ambil HPP dari item transaksi
+  let todayNetProfit = null;
+  let monthNetProfit = null;
+  let avgMarginPct   = null;
+  if (isAdmin) {
+    const [todayItems, monthItems] = await Promise.all([
+      prisma.transactionItem.findMany({
+        where: { transaction: { status: "COMPLETED", createdAt: { gte: today } } },
+        select: { costPrice: true, quantity: true, subtotal: true },
+      }),
+      prisma.transactionItem.findMany({
+        where: { transaction: { status: "COMPLETED", createdAt: { gte: firstOfMonth } } },
+        select: { costPrice: true, quantity: true, subtotal: true },
+      }),
+    ]);
+    const todaySalesVal  = todayStats._sum.grandTotal ?? 0;
+    const todayHPP       = todayItems.reduce((s, i) => s + i.costPrice * i.quantity, 0);
+    todayNetProfit        = todaySalesVal - todayHPP;
+
+    const monthSalesVal  = monthStats._sum.grandTotal ?? 0;
+    const monthHPP       = monthItems.reduce((s, i) => s + i.costPrice * i.quantity, 0);
+    monthNetProfit        = monthSalesVal - monthHPP;
+
+    const totalRevMonth  = monthSalesVal;
+    avgMarginPct          = totalRevMonth > 0
+      ? Math.round((monthNetProfit / totalRevMonth) * 100)
+      : 0;
+  }
+
+  return {
+    todaySales: todayStats._sum.grandTotal ?? 0,
+    todayTransactions: todayStats._count.id ?? 0,
+    monthSales: monthStats._sum.grandTotal ?? 0,
+    lowStockItems,
+    recentTransactions,
+    branchCount,
+    todayNetProfit,
+    monthNetProfit,
+    avgMarginPct,
+  };
+}
+
+export default async function DashboardPage() {
+  const session = await getServerSession(authOptions);
+  const stats = await getDashboardStats(session);
+  const isAdmin = session.user.role === "ADMIN";
+
+  return (
+    <div className="p-4 sm:p-6 space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-xl font-bold text-gray-900">Dashboard</h1>
+        <p className="text-sm text-gray-500 mt-0.5">
+          {isAdmin ? "Ringkasan semua cabang" : `Cabang: ${session.user.branchName}`}
+        </p>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <StatCard
+          label="Penjualan Hari Ini"
+          value={formatRupiah(stats.todaySales)}
+          sub="Transaksi selesai"
+          color="blue"
+          icon="💰"
+        />
+        <StatCard
+          label="Transaksi Hari Ini"
+          value={stats.todayTransactions}
+          sub="Total transaksi"
+          color="green"
+          icon="🧾"
+        />
+        <StatCard
+          label="Penjualan Bulan Ini"
+          value={formatRupiah(stats.monthSales)}
+          sub="Akumulasi bulan ini"
+          color="purple"
+          icon="📈"
+        />
+        {isAdmin ? (
+          <StatCard
+            label="Cabang Aktif"
+            value={stats.branchCount}
+            sub="Cabang beroperasi"
+            color="orange"
+            icon="🏪"
+          />
+        ) : (
+          <StatCard
+            label="Stok Menipis"
+            value={stats.lowStockItems.length}
+            sub="Produk perlu restock"
+            color={stats.lowStockItems.length > 0 ? "red" : "green"}
+            icon="⚠️"
+          />
+        )}
+      </div>
+
+      {/* Net Profit Cards — admin only */}
+      {isAdmin && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <StatCard
+            label="Net Profit Hari Ini"
+            value={formatRupiah(stats.todayNetProfit)}
+            sub="Pendapatan − HPP"
+            color={stats.todayNetProfit >= 0 ? "green" : "red"}
+            icon="📊"
+          />
+          <StatCard
+            label="Net Profit Bulan Ini"
+            value={formatRupiah(stats.monthNetProfit)}
+            sub="Akumulasi bulan ini"
+            color={stats.monthNetProfit >= 0 ? "green" : "red"}
+            icon="💹"
+          />
+          <StatCard
+            label="Margin % Bulan Ini"
+            value={`${stats.avgMarginPct}%`}
+            sub="(Net Profit / Penjualan) × 100"
+            color={stats.avgMarginPct >= 20 ? "green" : stats.avgMarginPct >= 10 ? "blue" : "orange"}
+            icon="📉"
+          />
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        {/* Transaksi Terbaru */}
+        <div className="xl:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-800">Transaksi Terbaru</h2>
+            <Link href="/transactions" className="text-sm text-blue-600 hover:underline">
+              Lihat semua →
+            </Link>
+          </div>
+
+          {stats.recentTransactions.length === 0 ? (
+            <div className="px-5 py-10 text-center text-gray-400 text-sm">
+              Belum ada transaksi
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-50">
+              {stats.recentTransactions.map((trx) => (
+                <div key={trx.id} className="flex items-center justify-between px-5 py-3.5">
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">{trx.invoiceNumber}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {trx.user.name} · {trx.branch.name} · {formatDateTime(trx.createdAt)}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-semibold text-gray-900">
+                      {formatRupiah(trx.grandTotal)}
+                    </p>
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        trx.status === "COMPLETED"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-red-600 text-white"
+                      }`}
+                    >
+                      {trx.status === "COMPLETED" ? "Selesai" : "VOID"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Stok Menipis */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <h2 className="font-semibold text-gray-800">⚠ Stok Menipis</h2>
+            <Link href="/products" className="text-sm text-blue-600 hover:underline">
+              Kelola →
+            </Link>
+          </div>
+
+          {stats.lowStockItems.length === 0 ? (
+            <div className="px-5 py-10 text-center text-sm text-green-600">
+              ✓ Semua stok aman
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
+              {stats.lowStockItems.map((item, i) => (
+                <div key={i} className="flex items-center justify-between px-5 py-3 gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">
+                      {item.product.name}
+                    </p>
+                    <p className="text-xs text-gray-400">{item.branch.name}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className={`text-sm font-bold ${item.quantity === 0 ? "text-red-600" : "text-orange-500"}`}>
+                      {item.quantity}
+                    </span>
+                    <p className="text-xs text-gray-400">min {item.lowStockAlert}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h2 className="font-semibold text-gray-800 mb-4">Akses Cepat</h2>
+        <div className="flex flex-wrap gap-3">
+          <QuickLink href="/pos" label="Buka Kasir" icon="🛒" color="bg-blue-600" />
+          <QuickLink href="/transactions" label="Riwayat Transaksi" icon="📋" color="bg-gray-700" />
+          {isAdmin && (
+            <>
+              <QuickLink href="/products" label="Kelola Produk" icon="📦" color="bg-green-600" />
+              <QuickLink href="/reports" label="Laporan" icon="📊" color="bg-purple-600" />
+              <QuickLink href="/admin/users" label="Kelola User" icon="👥" color="bg-orange-500" />
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, sub, color, icon }) {
+  const colors = {
+    blue: "bg-blue-50 text-blue-600",
+    green: "bg-green-50 text-green-600",
+    purple: "bg-purple-50 text-purple-600",
+    orange: "bg-orange-50 text-orange-600",
+    red: "bg-red-50 text-red-600",
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1.5">{value}</p>
+          <p className="text-xs text-gray-400 mt-1">{sub}</p>
+        </div>
+        <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg ${colors[color]}`}>
+          {icon}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function QuickLink({ href, label, icon, color }) {
+  return (
+    <Link
+      href={href}
+      className={`flex items-center gap-2 px-4 py-2.5 ${color} text-white rounded-lg text-sm font-medium hover:opacity-90 transition`}
+    >
+      <span>{icon}</span>
+      {label}
+    </Link>
+  );
+}
