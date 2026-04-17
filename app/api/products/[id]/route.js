@@ -11,20 +11,26 @@ export async function PUT(req, { params }) {
 
   try {
     const { id } = await params;
-    const { name, description, price, costPrice, categoryId, isActive } = await req.json();
+    const { name, description, price, costPrice, categoryId, isActive, storageZone } = await req.json();
 
     if (!name?.trim()) return NextResponse.json({ error: "Nama produk wajib diisi" }, { status: 400 });
     if (!price || price <= 0) return NextResponse.json({ error: "Harga jual tidak valid" }, { status: 400 });
+
+    const VALID_ZONES = ["FROZEN", "CHILLED", "AMBIENT", "DISPLAY_ONLY"];
+    if (storageZone && !VALID_ZONES.includes(storageZone)) {
+      return NextResponse.json({ error: "Storage zone tidak valid" }, { status: 400 });
+    }
 
     const product = await prisma.product.update({
       where: { id },
       data: {
         name: name.trim(),
         description: description?.trim() || null,
-        price:     parseInt(price),
-        costPrice: parseInt(costPrice) || 0,
+        price:       parseInt(price),
+        costPrice:   parseInt(costPrice) || 0,
         categoryId,
-        isActive: isActive ?? true,
+        isActive:    isActive ?? true,
+        ...(storageZone ? { storageZone } : {}),
       },
       include: {
         category: true,

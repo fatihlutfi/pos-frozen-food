@@ -393,7 +393,22 @@ export default function POSInterface({
                       </span>
                     )}
 
-                    <p className="text-xs text-gray-400 mb-1 truncate">{product.category.name}</p>
+                    <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                      <p className="text-xs text-gray-400 truncate">{product.category.name}</p>
+                      {product.storageZone && (() => {
+                        const zoneCfg = {
+                          FROZEN:       { label: "Frozen",   cls: "bg-blue-100 text-blue-600"   },
+                          CHILLED:      { label: "Chilled",  cls: "bg-cyan-100 text-cyan-600"   },
+                          AMBIENT:      { label: "Ambient",  cls: "bg-gray-100 text-gray-500"   },
+                          DISPLAY_ONLY: { label: "Display",  cls: "bg-yellow-100 text-yellow-600" },
+                        }[product.storageZone];
+                        return zoneCfg ? (
+                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${zoneCfg.cls}`}>
+                            {zoneCfg.label}
+                          </span>
+                        ) : null;
+                      })()}
+                    </div>
                     <p className="text-sm font-semibold text-gray-900 leading-tight line-clamp-2 mb-2">
                       {product.name}
                     </p>

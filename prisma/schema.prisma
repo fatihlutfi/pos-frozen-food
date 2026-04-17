@@ -49,6 +49,13 @@ enum StockOpnameStatus {
   CONFIRMED  // sudah dikonfirmasi, stok diperbarui
 }
 
+enum StorageZone {
+  FROZEN       // freezer / -18°C
+  CHILLED      // kulkas / 0–4°C
+  AMBIENT      // suhu ruang
+  DISPLAY_ONLY // display / tidak dijual lepas
+}
+
 // ============================================================
 // BRANCH — Cabang toko
 // ============================================================
@@ -128,6 +135,8 @@ model Product {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  storageZone StorageZone @default(FROZEN)
 
   categoryId String
   category   Category @relation(fields: [categoryId], references: [id])
