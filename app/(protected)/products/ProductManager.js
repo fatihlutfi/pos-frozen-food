@@ -40,6 +40,13 @@ export default function ProductManager({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Batch modal
+  const [batchModal,   setBatchModal]   = useState({ open: false, product: null });
+  const [batches,      setBatches]      = useState([]);
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [batchError,   setBatchError]   = useState("");
+  const [batchForm,    setBatchForm]    = useState({ branchId: "", batchCode: "", productionDate: "", expiryDate: "", quantity: "" });
+
   // Discount rules modal
   const [discountModal, setDiscountModal]   = useState({ open: false, product: null });
   const [discountRules, setDiscountRules]   = useState([]);
@@ -110,6 +117,79 @@ export default function ProductManager({
       ));
     } finally {
       setDiscLoading(false);
+    }
+  }
+
+  // Batch helpers
+  function getExpiryStatus(expiryDate) {
+    const now = new Date();
+    const diffDays = Math.ceil((new Date(expiryDate) - now) / (1000 * 60 * 60 * 24));
+    if (diffDays < 0)  return { status: "expired",  label: "Expired",      color: "bg-black text-white",         autoDiscount: 0  };
+    if (diffDays < 7)  return { status: "critical",  label: "Deal Today",   color: "bg-red-600 text-white",       autoDiscount: 25 };
+    if (diffDays < 30) return { status: "warning",   label: "Segera Habis", color: "bg-orange-500 text-white",    autoDiscount: 15 };
+    if (diffDays < 90) return { status: "soon",      label: "Segera Promo", color: "bg-yellow-400 text-gray-900", autoDiscount: 0  };
+    return               { status: "good",      label: "Aman",         color: "bg-green-500 text-white",     autoDiscount: 0  };
+  }
+
+  async function openBatchModal(product) {
+    setBatchModal({ open: true, product });
+    setBatchError("");
+    setBatchForm({ branchId: branches[0]?.id || "", batchCode: "", productionDate: "", expiryDate: "", quantity: "" });
+    setBatchLoading(true);
+    try {
+      const res = await fetch(`/api/batches?productId=${product.id}&includeExpired=true`);
+      if (res.ok) setBatches(await res.json());
+    } finally {
+      setBatchLoading(false);
+    }
+  }
+
+  function closeBatchModal() {
+    setBatchModal({ open: false, product: null });
+    setBatches([]);
+    setBatchError("");
+  }
+
+  async function handleAddBatch(e) {
+    e.preventDefault();
+    if (!batchForm.batchCode || !batchForm.expiryDate || !batchForm.quantity || !batchForm.branchId) {
+      setBatchError("Isi semua field yang wajib"); return;
+    }
+    setBatchLoading(true);
+    setBatchError("");
+    try {
+      const res = await fetch("/api/batches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId:      batchModal.product.id,
+          branchId:       batchForm.branchId,
+          batchCode:      batchForm.batchCode,
+          productionDate: batchForm.productionDate || null,
+          expiryDate:     batchForm.expiryDate,
+          quantity:       parseInt(batchForm.quantity),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setBatchError(data.error || "Gagal menyimpan"); return; }
+      // Refresh list
+      const refreshRes = await fetch(`/api/batches?productId=${batchModal.product.id}&includeExpired=true`);
+      if (refreshRes.ok) setBatches(await refreshRes.json());
+      // Update stok di state lokal
+      setProducts((prev) => prev.map((p) => {
+        if (p.id !== batchModal.product.id) return p;
+        return {
+          ...p,
+          stocks: p.stocks.map((s) =>
+            s.branchId === batchForm.branchId
+              ? { ...s, quantity: s.quantity + parseInt(batchForm.quantity) }
+              : s
+          ),
+        };
+      }));
+      setBatchForm((f) => ({ ...f, batchCode: "", productionDate: "", expiryDate: "", quantity: "" }));
+    } finally {
+      setBatchLoading(false);
     }
   }
 
@@ -422,6 +502,12 @@ export default function ProductManager({
                     {isAdmin && (
                       <td className="px-5 py-3.5 text-right">
                         <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => openBatchModal(product)}
+                            className="px-3 py-1.5 text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg transition cursor-pointer"
+                          >
+                            Batch
+                          </button>
                           <button
                             onClick={() => openStock(product)}
                             className="px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition cursor-pointer"
@@ -761,6 +847,122 @@ export default function ProductManager({
               className="w-full py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition cursor-pointer"
             >
               {discLoading ? "Menyimpan..." : "+ Tambah Aturan"}
+            </button>
+          </form>
+        </div>
+      </Modal>
+
+      {/* Modal Batch & Expiry */}
+      <Modal
+        isOpen={batchModal.open}
+        onClose={closeBatchModal}
+        title={`Batch & Expiry — ${batchModal.product?.name}`}
+        size="md"
+      >
+        <div className="space-y-4">
+          {/* Daftar batch */}
+          {batchLoading && batches.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-4">Memuat...</p>
+          ) : batches.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-4">Belum ada batch</p>
+          ) : (
+            <div className="space-y-2 max-h-52 overflow-y-auto">
+              {batches.map((b) => {
+                const info = getExpiryStatus(b.expiryDate);
+                return (
+                  <div key={b.id} className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-semibold text-gray-800">{b.batchCode}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${info.color}`}>
+                          {info.label}
+                        </span>
+                        {info.autoDiscount > 0 && (
+                          <span className="text-xs text-orange-600 font-medium">Auto-diskon {info.autoDiscount}%</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-400 mt-0.5">
+                        Exp: {new Date(b.expiryDate).toLocaleDateString("id-ID")}
+                        {" · "}{b.branch?.name}
+                        {" · "}<span className="font-medium text-gray-600">Sisa: {b.quantity}</span>
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Form tambah batch baru */}
+          <form onSubmit={handleAddBatch} className="border border-gray-200 rounded-lg p-3 space-y-3 bg-gray-50">
+            <p className="text-xs font-semibold text-gray-600">Terima Batch Baru</p>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">Cabang</label>
+              <select
+                value={batchForm.branchId}
+                onChange={(e) => setBatchForm({ ...batchForm, branchId: e.target.value })}
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="">-- Pilih Cabang --</option>
+                {branches.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Kode Batch <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  value={batchForm.batchCode}
+                  onChange={(e) => setBatchForm({ ...batchForm, batchCode: e.target.value })}
+                  placeholder="contoh: B2024-001"
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Qty <span className="text-red-500">*</span></label>
+                <input
+                  type="number"
+                  min="1"
+                  value={batchForm.quantity}
+                  onChange={(e) => setBatchForm({ ...batchForm, quantity: e.target.value })}
+                  placeholder="100"
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Tgl Produksi</label>
+                <input
+                  type="date"
+                  value={batchForm.productionDate}
+                  onChange={(e) => setBatchForm({ ...batchForm, productionDate: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Tgl Expired <span className="text-red-500">*</span></label>
+                <input
+                  type="date"
+                  value={batchForm.expiryDate}
+                  onChange={(e) => setBatchForm({ ...batchForm, expiryDate: e.target.value })}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            {batchError && <p className="text-xs text-red-600">{batchError}</p>}
+            <button
+              type="submit"
+              disabled={batchLoading}
+              className="w-full py-2 bg-purple-600 text-white rounded-lg text-sm font-semibold hover:bg-purple-700 disabled:opacity-50 transition cursor-pointer"
+            >
+              {batchLoading ? "Menyimpan..." : "+ Terima Batch"}
             </button>
           </form>
         </div>

@@ -11,10 +11,20 @@ const PAYMENT_METHODS = [
   { value: "QRIS", label: "QRIS", icon: "📱" },
 ];
 
+// Hitung expiry status dari tanggal kadaluarsa
+function getExpiryInfo(expiryDate) {
+  const diffDays = Math.ceil((new Date(expiryDate) - new Date()) / 86400000);
+  if (diffDays < 0)  return { status: "expired",  label: "Expired",      autoDiscount: 0,  blocked: true,  cls: "bg-black text-white"         };
+  if (diffDays < 7)  return { status: "critical",  label: "Deal Today",   autoDiscount: 25, blocked: false, cls: "bg-red-600 text-white"        };
+  if (diffDays < 30) return { status: "warning",   label: "Segera Habis", autoDiscount: 15, blocked: false, cls: "bg-orange-500 text-white"     };
+  if (diffDays < 90) return { status: "soon",      label: "Segera Promo", autoDiscount: 0,  blocked: false, cls: "bg-yellow-400 text-gray-900"  };
+  return               { status: "good",      label: null,           autoDiscount: 0,  blocked: false, cls: ""                            };
+}
+
 export default function POSInterface({
   products, categories, branches,
   isAdmin, defaultBranchId, defaultBranchName, cashierName,
-  userId, initialShift,
+  userId, initialShift, batchAlerts = [],
 }) {
   const router = useRouter();
 
@@ -64,6 +74,14 @@ export default function POSInterface({
     return s ? s.quantity : 0;
   }
 
+  // Ambil expiry info dari batch terdekat kadaluarsa untuk produk+cabang ini
+  function getProductExpiryInfo(productId) {
+    const nearest = batchAlerts
+      .filter((b) => b.productId === productId && b.branchId === selectedBranchId && b.quantity > 0)
+      .sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate))[0];
+    return nearest ? getExpiryInfo(nearest.expiryDate) : null;
+  }
+
   // Filter produk
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
@@ -94,22 +112,30 @@ export default function POSInterface({
     const stock = getStockForBranch(product);
     if (stock <= 0) return;
 
+    // Block produk expired
+    const expiryInfo = getProductExpiryInfo(product.id);
+    if (expiryInfo?.blocked) return;
+
     setCart((prev) => {
       const existing = prev.find((i) => i.product.id === product.id);
       if (existing) {
         if (existing.quantity >= stock) return prev;
-        const newQty        = existing.quantity + 1;
-        const discountPct   = getApplicableDiscount(product, newQty);
-        const effectivePrice = getEffectivePrice(product, newQty);
+        const newQty         = existing.quantity + 1;
+        const qtyDiscPct     = getApplicableDiscount(product, newQty);
+        const expiryDisc     = expiryInfo?.autoDiscount ?? 0;
+        const discountPct    = Math.max(qtyDiscPct, expiryDisc);
+        const effectivePrice = discountPct > 0 ? Math.round(product.price * (1 - discountPct / 100)) : product.price;
         return prev.map((i) =>
           i.product.id === product.id
             ? { ...i, quantity: newQty, discountPct, effectivePrice }
             : i
         );
       }
-      const discountPct    = getApplicableDiscount(product, 1);
-      const effectivePrice = getEffectivePrice(product, 1);
-      return [...prev, { product, quantity: 1, discountPct, effectivePrice }];
+      const qtyDiscPct     = getApplicableDiscount(product, 1);
+      const expiryDisc     = expiryInfo?.autoDiscount ?? 0;
+      const discountPct    = Math.max(qtyDiscPct, expiryDisc);
+      const effectivePrice = discountPct > 0 ? Math.round(product.price * (1 - discountPct / 100)) : product.price;
+      return [...prev, { product, quantity: 1, discountPct, effectivePrice, expiryInfo }];
     });
     if (mobileTab === "products") setMobileTab("cart");
   }
@@ -369,17 +395,20 @@ export default function POSInterface({
             {/* Grid produk */}
             <div className="flex-1 overflow-y-auto p-3 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 content-start">
               {filteredProducts.map((product) => {
-                const stock = getStockForBranch(product);
-                const inCart = cart.find((i) => i.product.id === product.id)?.quantity ?? 0;
+                const stock      = getStockForBranch(product);
+                const inCart     = cart.find((i) => i.product.id === product.id)?.quantity ?? 0;
                 const outOfStock = stock <= 0;
+                const expiryInfo = getProductExpiryInfo(product.id);
+                const isExpired  = expiryInfo?.blocked;
+                const disabled   = outOfStock || isExpired;
 
                 return (
                   <button
                     key={product.id}
                     onClick={() => addToCart(product)}
-                    disabled={outOfStock}
+                    disabled={disabled}
                     className={`relative text-left p-3 rounded-xl border-2 transition cursor-pointer
-                      ${outOfStock
+                      ${disabled
                         ? "border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed"
                         : inCart > 0
                           ? "border-blue-500 bg-blue-50 shadow-sm"
@@ -390,6 +419,12 @@ export default function POSInterface({
                     {inCart > 0 && (
                       <span className="absolute top-2 right-2 bg-blue-600 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center leading-none">
                         {inCart}
+                      </span>
+                    )}
+                    {/* Expiry badge */}
+                    {expiryInfo?.label && (
+                      <span className={`absolute top-2 left-2 text-xs px-1.5 py-0.5 rounded font-semibold ${expiryInfo.cls}`}>
+                        {expiryInfo.label}
                       </span>
                     )}
 
@@ -412,8 +447,16 @@ export default function POSInterface({
                     <p className="text-sm font-semibold text-gray-900 leading-tight line-clamp-2 mb-2">
                       {product.name}
                     </p>
-                    <p className="text-sm font-bold text-blue-600">{formatRupiah(product.price)}</p>
-                    {(() => {
+                    <p className="text-sm font-bold text-blue-600">
+                      {expiryInfo?.autoDiscount > 0
+                        ? <><span className="line-through text-gray-400 text-xs font-normal">{formatRupiah(product.price)}</span>{" "}{formatRupiah(Math.round(product.price * (1 - expiryInfo.autoDiscount / 100)))}</>
+                        : formatRupiah(product.price)
+                      }
+                    </p>
+                    {expiryInfo?.autoDiscount > 0 && (
+                      <p className="text-xs text-red-600 font-semibold">Auto-diskon {expiryInfo.autoDiscount}%</p>
+                    )}
+                    {!expiryInfo?.autoDiscount && (() => {
                       const branchRules = (product.discountRules || []).filter(
                         (r) => r.isActive !== false && r.branchId === selectedBranchId
                       ).sort((a, b) => a.minQty - b.minQty);
@@ -423,8 +466,8 @@ export default function POSInterface({
                         </p>
                       ) : null;
                     })()}
-                    <p className={`text-xs mt-1 font-medium ${outOfStock ? "text-red-500" : stock <= 20 ? "text-orange-500" : "text-gray-400"}`}>
-                      {outOfStock ? "Stok habis" : `Stok: ${stock}`}
+                    <p className={`text-xs mt-1 font-medium ${isExpired ? "text-black" : outOfStock ? "text-red-500" : stock <= 20 ? "text-orange-500" : "text-gray-400"}`}>
+                      {isExpired ? "Tidak bisa dijual" : outOfStock ? "Stok habis" : `Stok: ${stock}`}
                     </p>
                   </button>
                 );

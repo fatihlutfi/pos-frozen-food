@@ -76,6 +76,7 @@ model Branch {
   shifts        CashierShift[]
   stockOpnames  StockOpname[]
   discountRules ProductDiscountRule[]
+  batches       ProductBatch[]
 
   @@map("branches")
 }
@@ -146,6 +147,7 @@ model Product {
   stockLogs        StockLog[]
   opnameItems      StockOpnameItem[]
   discountRules    ProductDiscountRule[]
+  batches          ProductBatch[]
 
   @@map("products")
 }
@@ -320,6 +322,31 @@ model StockOpnameItem {
 
   @@unique([opnameId, productId])
   @@map("stock_opname_items")
+}
+
+// ============================================================
+// PRODUCT BATCH — Batch stok dengan expiry tracking (FIFO)
+// ============================================================
+
+model ProductBatch {
+  id             String    @id @default(cuid())
+  batchCode      String
+  productionDate DateTime?
+  expiryDate     DateTime
+  quantity       Int       @default(0)  // sisa stok batch ini
+  initialQty     Int       @default(0)  // qty awal saat diterima
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id])
+
+  @@index([productId, branchId, expiryDate])
+  @@map("product_batches")
 }
 
 // ============================================================

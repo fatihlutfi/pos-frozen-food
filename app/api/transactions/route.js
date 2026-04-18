@@ -189,6 +189,23 @@ export async function POST(req) {
           transactionId: transaction.id,
         },
       });
+
+      // FIFO batch deduction — kurangi dari batch dengan expiry paling dekat
+      const batches = await prisma.productBatch.findMany({
+        where: { productId: item.productId, branchId, isActive: true, quantity: { gt: 0 } },
+        orderBy: { expiryDate: "asc" },
+      });
+
+      let remaining = item.quantity;
+      for (const batch of batches) {
+        if (remaining <= 0) break;
+        const deduct = Math.min(batch.quantity, remaining);
+        await prisma.productBatch.update({
+          where: { id: batch.id },
+          data: { quantity: batch.quantity - deduct },
+        });
+        remaining -= deduct;
+      }
     }
 
     return NextResponse.json(transaction, { status: 201 });

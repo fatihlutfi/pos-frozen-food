@@ -59,6 +59,23 @@ async function getDashboardStats(session) {
   // Cabang aktif (admin only)
   const branchCount = isAdmin ? await prisma.branch.count({ where: { isActive: true } }) : null;
 
+  // Expiry alert — batch yang kadaluarsa dalam 30 hari
+  const expiryAlertCutoff = new Date();
+  expiryAlertCutoff.setDate(expiryAlertCutoff.getDate() + 30);
+  const expiryBatches = await prisma.productBatch.findMany({
+    where: {
+      isActive: true,
+      quantity: { gt: 0 },
+      expiryDate: { lte: expiryAlertCutoff },
+      ...branchFilter,
+    },
+    include: {
+      product: { select: { name: true } },
+      branch:  { select: { name: true } },
+    },
+    orderBy: { expiryDate: "asc" },
+  });
+
   // Net profit (admin only) — ambil HPP dari item transaksi
   let todayNetProfit = null;
   let monthNetProfit = null;
@@ -98,6 +115,7 @@ async function getDashboardStats(session) {
     todayNetProfit,
     monthNetProfit,
     avgMarginPct,
+    expiryBatches,
   };
 }
 
@@ -264,6 +282,52 @@ export default async function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Expiry Alert Widget */}
+      {stats.expiryBatches.length > 0 && (
+        <div className="bg-white rounded-xl border border-orange-200 shadow-sm">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-orange-100 bg-orange-50 rounded-t-xl">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">⏰</span>
+              <h2 className="font-semibold text-orange-800">Expiry Alert</h2>
+              <span className="text-xs bg-orange-200 text-orange-800 px-2 py-0.5 rounded-full font-semibold">
+                {stats.expiryBatches.length} batch
+              </span>
+            </div>
+            <Link href="/products" className="text-sm text-orange-700 hover:underline font-medium">
+              Kelola Batch →
+            </Link>
+          </div>
+          <div className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
+            {stats.expiryBatches.map((b) => {
+              const diffDays = Math.ceil((new Date(b.expiryDate) - new Date()) / 86400000);
+              const { label, color } = diffDays < 0
+                ? { label: "Expired",      color: "bg-black text-white"         }
+                : diffDays < 7
+                ? { label: "Deal Today",   color: "bg-red-600 text-white"       }
+                : diffDays < 30
+                ? { label: "Segera Habis", color: "bg-orange-500 text-white"    }
+                : { label: "Segera Promo", color: "bg-yellow-400 text-gray-900" };
+              return (
+                <div key={b.id} className="flex items-center justify-between px-5 py-3 gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{b.product.name}</p>
+                    <p className="text-xs text-gray-400">{b.branch.name} · Batch: {b.batchCode}</p>
+                  </div>
+                  <div className="text-right shrink-0 space-y-0.5">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${color}`}>
+                      {label}
+                    </span>
+                    <p className="text-xs text-gray-400">
+                      {diffDays < 0 ? "Sudah lewat" : `${diffDays} hari lagi`} · Sisa {b.quantity}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
