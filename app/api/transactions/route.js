@@ -191,18 +191,12 @@ export async function POST(req) {
               );
             }
 
-            // Baca qty terbaru untuk stock log (setelah atomic update)
-            const updatedStock = await tx.stock.findUnique({
-              where: { productId_branchId: { productId: item.productId, branchId } },
-              select: { quantity: true },
-            });
-
             await tx.stockLog.create({
               data: {
                 type:          "SALE",
                 change:        -item.quantity,
                 noteBefore:    s.quantity,
-                noteAfter:     updatedStock.quantity,
+                noteAfter:     s.quantity - item.quantity,
                 note:          `Penjualan ${invoiceNumber}`,
                 productId:     item.productId,
                 branchId,
