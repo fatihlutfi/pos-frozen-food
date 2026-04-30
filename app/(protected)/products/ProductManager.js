@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Modal from "@/components/Modal";
 import { formatRupiah } from "@/lib/format";
@@ -35,6 +35,21 @@ export default function ProductManager({
   const [discLoading,   setDiscLoading]     = useState(false);
   const [discError,     setDiscError]       = useState("");
   const [discForm,      setDiscForm]        = useState({ minQty: "", discountPercent: "", branchId: "" });
+
+  // Dropdown Kelola
+  const [openDropdown, setOpenDropdown] = useState(null); // product.id or null
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (!e.target.closest("[data-dropdown-kelola]")) {
+        setOpenDropdown(null);
+      }
+    }
+    if (openDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [openDropdown]);
 
   // Filter produk di client
   const filtered = useMemo(() => {
@@ -468,24 +483,40 @@ export default function ProductManager({
                     {isAdmin && (
                       <td className="px-5 py-3.5 text-right">
                         <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => openBatchModal(product)}
-                            className="px-3 py-1.5 text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg transition cursor-pointer"
-                          >
-                            Batch
-                          </button>
-                          <button
-                            onClick={() => openStock(product)}
-                            className="px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 hover:bg-green-100 rounded-lg transition cursor-pointer"
-                          >
-                            Stok
-                          </button>
-                          <button
-                            onClick={() => openDiscountModal(product)}
-                            className="px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition cursor-pointer"
-                          >
-                            Diskon
-                          </button>
+                          {/* Dropdown Kelola */}
+                          <div className="relative" data-dropdown-kelola>
+                            <button
+                              onClick={() => setOpenDropdown(openDropdown === product.id ? null : product.id)}
+                              className="px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition cursor-pointer flex items-center gap-1"
+                            >
+                              ⚙️ Kelola
+                              <svg className={`w-3 h-3 transition-transform ${openDropdown === product.id ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </button>
+                            {openDropdown === product.id && (
+                              <div className="absolute right-0 mt-1 w-44 bg-white border border-gray-200 rounded-xl shadow-lg z-20 py-1">
+                                <button
+                                  onClick={() => { openBatchModal(product); setOpenDropdown(null); }}
+                                  className="w-full text-left px-4 py-2 text-xs font-medium text-purple-700 hover:bg-purple-50 transition cursor-pointer"
+                                >
+                                  📦 Kelola Batch
+                                </button>
+                                <button
+                                  onClick={() => { openStock(product); setOpenDropdown(null); }}
+                                  className="w-full text-left px-4 py-2 text-xs font-medium text-green-700 hover:bg-green-50 transition cursor-pointer"
+                                >
+                                  📊 Update Stok
+                                </button>
+                                <button
+                                  onClick={() => { openDiscountModal(product); setOpenDropdown(null); }}
+                                  className="w-full text-left px-4 py-2 text-xs font-medium text-blue-700 hover:bg-blue-50 transition cursor-pointer"
+                                >
+                                  🏷️ Atur Diskon Qty
+                                </button>
+                              </div>
+                            )}
+                          </div>
                           <button
                             onClick={() => openEdit(product)}
                             className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition cursor-pointer"
