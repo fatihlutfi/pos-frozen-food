@@ -508,12 +508,6 @@ export default function ProductManager({
                                 >
                                   📊 Update Stok
                                 </button>
-                                <button
-                                  onClick={() => { openDiscountModal(product); setOpenDropdown(null); }}
-                                  className="w-full text-left px-4 py-2 text-xs font-medium text-blue-700 hover:bg-blue-50 transition cursor-pointer"
-                                >
-                                  🏷️ Atur Diskon Qty
-                                </button>
                               </div>
                             )}
                           </div>

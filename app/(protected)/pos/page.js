@@ -38,7 +38,7 @@ export default async function POSPage() {
   const branchId = session.user.branchId ?? null;
 
   // Produk & kategori dari cache — data shift & batch harus fresh tiap render
-  const [{ products, categories }, branches, activeShift, batchAlerts] = await Promise.all([
+  const [{ products, categories }, branches, activeShift, batchAlerts, activeBundles, promoSettings] = await Promise.all([
     getCachedProductsAndCategories(isAdmin ? "all" : branchId, isAdmin),
     isAdmin
       ? prisma.branch.findMany({ where: { isActive: true }, orderBy: { name: "asc" } })
@@ -59,6 +59,28 @@ export default async function POSPage() {
       select: { productId: true, branchId: true, expiryDate: true, quantity: true },
       orderBy: { expiryDate: "asc" },
     }),
+
+    // Bundling aktif — fresh setiap render
+    prisma.bundle.findMany({
+      where: {
+        isActive: true,
+        OR: [{ startDate: null }, { startDate: { lte: new Date() } }],
+        AND: [{ OR: [{ endDate: null }, { endDate: { gte: new Date() } }] }],
+        ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}),
+      },
+      include: {
+        items: {
+          include: {
+            product: { select: { id: true, name: true, price: true } },
+          },
+        },
+        branch: { select: { name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+
+    // Promo expiry settings — untuk threshold diskon dinamis
+    prisma.promoExpirySettings.findUnique({ where: { id: "singleton" } }),
   ]);
 
   // Jangan kirim costPrice ke kasir di client
@@ -78,6 +100,8 @@ export default async function POSPage() {
       userId={session.user.id}
       initialShift={activeShift ? JSON.parse(JSON.stringify(activeShift)) : null}
       batchAlerts={JSON.parse(JSON.stringify(batchAlerts))}
+      activeBundles={JSON.parse(JSON.stringify(activeBundles))}
+      promoSettings={promoSettings ? JSON.parse(JSON.stringify(promoSettings)) : null}
     />
   );
 }

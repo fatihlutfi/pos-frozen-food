@@ -11,6 +11,7 @@ const navAdmin = [
   { href: "/shifts",         label: "Shift Kasir",      icon: "🕐", lucide: null },
   { href: "/products",       label: "Produk",           icon: "📦", lucide: null },
   { href: "/categories",     label: "Kategori",         icon: "🗂", lucide: null },
+  { href: "/promo",          label: "Promo",            icon: "🔥", lucide: null },
   { href: "/transactions",   label: "Transaksi",        icon: "📋", lucide: null },
   { href: "/reports",        label: "Laporan",          icon: null, lucide: TrendingUp },
   { href: "/stock-opname",   label: "Stock Opname",     icon: null, lucide: ClipboardList },

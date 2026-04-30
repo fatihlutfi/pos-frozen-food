@@ -23,6 +23,7 @@ model Branch {
   stocks        Stock[]
   transactions  Transaction[]
   users         User[]
+  bundles       Bundle[]
 
   @@map("branches")
 }
@@ -74,6 +75,7 @@ model Product {
   opnameItems      StockOpnameItem[]
   stocks           Stock[]
   transactionItems TransactionItem[]
+  bundleItems      BundleItem[]
 
   @@index([categoryId, isActive])
   @@index([isActive, name])
@@ -246,6 +248,46 @@ model ProductDiscountRule {
 
   @@unique([productId, branchId, minQty])
   @@map("product_discount_rules")
+}
+
+model Bundle {
+  id          String       @id @default(cuid())
+  name        String
+  bundlePrice Int
+  isActive    Boolean      @default(true)
+  startDate   DateTime?
+  endDate     DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  branchId    String?
+  branch      Branch?      @relation(fields: [branchId], references: [id])
+  items       BundleItem[]
+
+  @@map("bundles")
+}
+
+model BundleItem {
+  id        String  @id @default(cuid())
+  quantity  Int     @default(1)
+  bundleId  String
+  productId String
+  bundle    Bundle  @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@unique([bundleId, productId])
+  @@map("bundle_items")
+}
+
+model PromoExpirySettings {
+  id               String   @id @default("singleton")
+  criticalDays     Int      @default(7)
+  warningDays      Int      @default(30)
+  criticalDiscount Float    @default(25)
+  warningDiscount  Float    @default(15)
+  isActive         Boolean  @default(true)
+  updatedAt        DateTime @updatedAt
+
+  @@map("promo_expiry_settings")
 }
 
 enum Role {

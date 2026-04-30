@@ -29,6 +29,8 @@ async function getDashboardStats(session) {
     branchCount,
     expiryBatches,
     profitData,
+    activeBundles,
+    activeDiscountCount,
   ] = await Promise.all([
     // Penjualan & jumlah transaksi hari ini
     prisma.transaction.aggregate({
@@ -99,6 +101,31 @@ async function getDashboardStats(session) {
           }),
         ])
       : Promise.resolve(null),
+
+    // Bundling aktif hari ini
+    prisma.bundle.findMany({
+      where: {
+        isActive: true,
+        OR: [{ startDate: null }, { startDate: { lte: new Date() } }],
+        AND: [{ OR: [{ endDate: null }, { endDate: { gte: new Date() } }] }],
+        ...(isAdmin ? {} : {
+          OR: [{ branchId: session.user.branchId }, { branchId: null }],
+        }),
+      },
+      include: {
+        items: { include: { product: { select: { name: true, price: true } } } },
+        branch: { select: { name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+
+    // Jumlah aturan diskon qty aktif
+    prisma.productDiscountRule.count({
+      where: {
+        isActive: true,
+        ...(isAdmin ? {} : { branchId: session.user.branchId }),
+      },
+    }),
   ]);
 
   // ── Kalkulasi net profit (admin) ──────────────────────────────────────────
@@ -122,6 +149,12 @@ async function getDashboardStats(session) {
       : 0;
   }
 
+  // Batch dengan auto-discount expiry (critical/warning)
+  const expiryPromoCount = expiryBatches.filter((b) => {
+    const d = Math.ceil((new Date(b.expiryDate) - new Date()) / 86400000);
+    return d >= 0 && d < 30;
+  }).length;
+
   return {
     todaySales:       todayStats._sum.grandTotal ?? 0,
     todayTransactions: todayStats._count.id ?? 0,
@@ -133,6 +166,9 @@ async function getDashboardStats(session) {
     monthNetProfit,
     avgMarginPct,
     expiryBatches,
+    activeBundles,
+    activeDiscountCount,
+    expiryPromoCount,
   };
 }
 
@@ -342,6 +378,72 @@ export default async function DashboardPage() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Promo Aktif Hari Ini */}
+      {(stats.activeBundles.length > 0 || stats.activeDiscountCount > 0 || stats.expiryPromoCount > 0) && (
+        <div className="bg-white rounded-xl border border-orange-300 shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-orange-100 bg-gradient-to-r from-orange-50 to-red-50 rounded-t-xl">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🔥</span>
+              <h2 className="font-semibold text-orange-800">Promo Aktif Hari Ini</h2>
+              <span className="text-xs bg-orange-200 text-orange-800 px-2 py-0.5 rounded-full font-semibold">
+                {stats.activeBundles.length + (stats.activeDiscountCount > 0 ? 1 : 0) + (stats.expiryPromoCount > 0 ? 1 : 0)} jenis promo
+              </span>
+            </div>
+            {isAdmin && (
+              <Link href="/promo" className="text-sm text-orange-700 hover:underline font-medium">
+                Kelola Promo →
+              </Link>
+            )}
+          </div>
+          <div className="p-5 space-y-3">
+            {/* Diskon Qty */}
+            {stats.activeDiscountCount > 0 && (
+              <div className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg">
+                <span className="text-xl">🏷️</span>
+                <div>
+                  <p className="text-sm font-medium text-blue-800">Diskon Qty Aktif</p>
+                  <p className="text-xs text-blue-600">{stats.activeDiscountCount} aturan diskon berdasarkan jumlah pembelian</p>
+                </div>
+              </div>
+            )}
+
+            {/* Bundling */}
+            {stats.activeBundles.map((bundle) => {
+              const normalPrice = bundle.items.reduce((s, i) => s + (i.product.price * i.quantity), 0);
+              const hemat       = normalPrice - bundle.bundlePrice;
+              return (
+                <div key={bundle.id} className="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
+                  <span className="text-xl">📦</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-green-800">{bundle.name}</p>
+                    <p className="text-xs text-green-600">
+                      {bundle.items.map((i) => `${i.product.name} ×${i.quantity}`).join(", ")}
+                    </p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-xs line-through text-gray-400">{bundle.bundlePrice !== normalPrice ? formatRupiah(normalPrice) : ""}</span>
+                      <span className="text-xs font-semibold text-green-700">{formatRupiah(bundle.bundlePrice)}</span>
+                      {hemat > 0 && <span className="text-xs bg-green-200 text-green-800 px-1.5 py-0.5 rounded-full">Hemat {formatRupiah(hemat)}</span>}
+                    </div>
+                  </div>
+                  {bundle.branch && <span className="text-xs text-gray-400 shrink-0">📍 {bundle.branch.name}</span>}
+                </div>
+              );
+            })}
+
+            {/* Promo Expiry */}
+            {stats.expiryPromoCount > 0 && (
+              <div className="flex items-center gap-3 p-3 bg-red-50 rounded-lg">
+                <span className="text-xl">⏰</span>
+                <div>
+                  <p className="text-sm font-medium text-red-800">Diskon Expiry Otomatis</p>
+                  <p className="text-xs text-red-600">{stats.expiryPromoCount} produk mendapat diskon otomatis karena mendekati expired</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

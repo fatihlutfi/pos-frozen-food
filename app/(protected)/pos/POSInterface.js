@@ -18,20 +18,25 @@ const PAYMENT_METHODS = [
   { value: "QRIS", label: "QRIS", icon: "📱" },
 ];
 
-// Hitung expiry status dari tanggal kadaluarsa
-function getExpiryInfo(expiryDate) {
-  const diffDays = Math.ceil((new Date(expiryDate) - new Date()) / 86400000);
-  if (diffDays < 0)  return { status: "expired",  label: "Expired",      autoDiscount: 0,  blocked: true,  cls: "bg-black text-white"         };
-  if (diffDays < 7)  return { status: "critical",  label: "Deal Today",   autoDiscount: 25, blocked: false, cls: "bg-red-600 text-white"        };
-  if (diffDays < 30) return { status: "warning",   label: "Segera Habis", autoDiscount: 15, blocked: false, cls: "bg-orange-500 text-white"     };
-  if (diffDays < 90) return { status: "soon",      label: "Segera Promo", autoDiscount: 0,  blocked: false, cls: "bg-yellow-400 text-gray-900"  };
-  return               { status: "good",      label: null,           autoDiscount: 0,  blocked: false, cls: ""                            };
+// Hitung expiry status dari tanggal kadaluarsa + promo settings yang dikonfigurasi admin
+function getExpiryInfo(expiryDate, settings = null) {
+  const diffDays       = Math.ceil((new Date(expiryDate) - new Date()) / 86400000);
+  const criticalDays   = settings?.isActive ? (settings.criticalDays   ?? 7)  : 7;
+  const warningDays    = settings?.isActive ? (settings.warningDays    ?? 30) : 30;
+  const criticalDisc   = settings?.isActive ? (settings.criticalDiscount ?? 25) : 25;
+  const warningDisc    = settings?.isActive ? (settings.warningDiscount  ?? 15) : 15;
+
+  if (diffDays < 0)             return { status: "expired",  label: "Expired",      autoDiscount: 0,           blocked: true,  cls: "bg-black text-white"         };
+  if (diffDays < criticalDays)  return { status: "critical",  label: "Deal Today",   autoDiscount: criticalDisc, blocked: false, cls: "bg-red-600 text-white"        };
+  if (diffDays < warningDays)   return { status: "warning",   label: "Segera Habis", autoDiscount: warningDisc,  blocked: false, cls: "bg-orange-500 text-white"     };
+  if (diffDays < 90)            return { status: "soon",      label: "Segera Promo", autoDiscount: 0,            blocked: false, cls: "bg-yellow-400 text-gray-900"  };
+  return                               { status: "good",      label: null,           autoDiscount: 0,            blocked: false, cls: ""                            };
 }
 
 export default function POSInterface({
   products: initialProducts, categories, branches,
   isAdmin, defaultBranchId, defaultBranchName, cashierName,
-  userId, initialShift, batchAlerts = [],
+  userId, initialShift, batchAlerts = [], activeBundles = [], promoSettings = null,
 }) {
   const router = useRouter();
 
@@ -121,7 +126,37 @@ export default function POSInterface({
     const nearest = batchAlerts
       .filter((b) => b.productId === productId && b.branchId === selectedBranchId && b.quantity > 0)
       .sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate))[0];
-    return nearest ? getExpiryInfo(nearest.expiryDate) : null;
+    return nearest ? getExpiryInfo(nearest.expiryDate, promoSettings) : null;
+  }
+
+  // Tambah semua produk dalam bundling ke keranjang dengan harga bundle
+  function addBundleToCart(bundle) {
+    const normalTotal = bundle.items.reduce((sum, item) => sum + (item.product.price * item.quantity), 0);
+    const discountPct = normalTotal > bundle.bundlePrice
+      ? Math.round((1 - bundle.bundlePrice / normalTotal) * 100)
+      : 0;
+
+    for (const item of bundle.items) {
+      const product = products.find((p) => p.id === item.product.id);
+      if (!product) continue;
+      const stock = getStockForBranch(product);
+      if (stock <= 0) continue;
+
+      setCart((prev) => {
+        const existing = prev.find((i) => i.product.id === product.id);
+        const newQty   = (existing?.quantity ?? 0) + item.quantity;
+        const effectivePrice = discountPct > 0 ? Math.round(product.price * (1 - discountPct / 100)) : product.price;
+        if (existing) {
+          return prev.map((i) =>
+            i.product.id === product.id
+              ? { ...i, quantity: Math.min(stock, newQty), discountPct, effectivePrice }
+              : i
+          );
+        }
+        return [...prev, { product, quantity: Math.min(stock, item.quantity), discountPct, effectivePrice, expiryInfo: null }];
+      });
+    }
+    if (mobileTab === "products") setMobileTab("cart");
   }
 
   // Filter produk
@@ -517,6 +552,44 @@ export default function POSInterface({
                 ))}
               </div>
             </div>
+
+            {/* ── Paket Bundling ── */}
+            {activeBundles.length > 0 && (
+              <div className="shrink-0 px-4 py-3 border-b border-gray-100 bg-orange-50">
+                <p className="text-xs font-semibold text-orange-700 mb-2">🔥 Paket Bundling</p>
+                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+                  {activeBundles
+                    .filter((b) => !b.branchId || b.branchId === selectedBranchId)
+                    .map((bundle) => {
+                      const normalTotal = bundle.items.reduce((s, i) => s + (i.product.price * i.quantity), 0);
+                      const hemat       = normalTotal - bundle.bundlePrice;
+                      return (
+                        <button
+                          key={bundle.id}
+                          onClick={() => addBundleToCart(bundle)}
+                          className="shrink-0 text-left bg-white border-2 border-orange-200 hover:border-orange-400 rounded-xl p-3 w-48 transition shadow-sm cursor-pointer"
+                        >
+                          <p className="text-xs font-bold text-gray-800 line-clamp-1">{bundle.name}</p>
+                          <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">
+                            {bundle.items.map((i) => `${i.product.name} ×${i.quantity}`).join(", ")}
+                          </p>
+                          <div className="mt-2 flex items-center gap-1 flex-wrap">
+                            {normalTotal !== bundle.bundlePrice && (
+                              <span className="text-xs line-through text-gray-400">{formatRupiah(normalTotal)}</span>
+                            )}
+                            <span className="text-sm font-bold text-orange-600">{formatRupiah(bundle.bundlePrice)}</span>
+                          </div>
+                          {hemat > 0 && (
+                            <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-medium">
+                              Hemat {formatRupiah(hemat)}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
 
             {/* Grid produk */}
             <div className="flex-1 overflow-y-auto p-3 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 content-start">
