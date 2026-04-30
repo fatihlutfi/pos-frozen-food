@@ -1,25 +1,62 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import Sidebar from "./Sidebar";
 
+const STORAGE_KEY = "pos-sidebar-collapsed";
+
 export default function AppShell({ role, userName, branchName, children }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen,      setSidebarOpen]      = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const pathname = usePathname();
+
+  // Hanya collapse sidebar di halaman /pos
+  const isPosPage = pathname === "/pos";
+  const isCollapsed = isPosPage && sidebarCollapsed;
+
+  // Baca preferensi dari localStorage setelah mount
+  useEffect(() => {
+    try {
+      setSidebarCollapsed(localStorage.getItem(STORAGE_KEY) === "true");
+    } catch {}
+  }, []);
+
+  // Listen event toggle dari POSInterface
+  useEffect(() => {
+    function handler() {
+      setSidebarCollapsed((prev) => {
+        const next = !prev;
+        try { localStorage.setItem(STORAGE_KEY, String(next)); } catch {}
+        return next;
+      });
+    }
+    window.addEventListener("toggle-pos-sidebar", handler);
+    return () => window.removeEventListener("toggle-pos-sidebar", handler);
+  }, []);
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
-      {/* Sidebar (desktop: selalu terlihat, mobile: toggle) */}
-      <Sidebar
-        role={role}
-        userName={userName}
-        branchName={branchName}
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      />
+      {/* Wrapper sidebar — animasi lebar untuk collapse/expand di desktop */}
+      <div
+        className={`
+          shrink-0 overflow-hidden
+          transition-[width] duration-300 ease-in-out
+          ${isCollapsed ? "w-0" : "w-64"}
+        `}
+      >
+        <Sidebar
+          role={role}
+          userName={userName}
+          branchName={branchName}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+        />
+      </div>
 
       {/* Area konten */}
-      <div className="flex flex-col flex-1 overflow-hidden">
-        {/* Mobile header */}
+      <div className="flex flex-col flex-1 overflow-hidden min-w-0">
+        {/* Mobile header — hamburger untuk mobile overlay sidebar */}
         <header className="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 h-14 flex items-center justify-between lg:hidden">
           <button
             onClick={() => setSidebarOpen(true)}

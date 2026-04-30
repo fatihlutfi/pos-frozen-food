@@ -1,10 +1,16 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { formatRupiah, formatDateTime } from "@/lib/format";
 import ReceiptModal from "./ReceiptModal";
 import { useOfflineQueue } from "@/lib/useOfflineQueue";
+
+const STORAGE_KEY = "pos-sidebar-collapsed";
+
+function toggleSidebar() {
+  window.dispatchEvent(new CustomEvent("toggle-pos-sidebar"));
+}
 
 const PAYMENT_METHODS = [
   { value: "CASH", label: "Tunai", icon: "💵" },
@@ -58,6 +64,17 @@ export default function POSInterface({
 
   // Offline queue
   const { isOnline, pendingCount, failedCount, syncing, enqueue, syncQueue } = useOfflineQueue();
+
+  // Sinkronkan icon hamburger dengan state sidebar di AppShell
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  useEffect(() => {
+    try { setSidebarCollapsed(localStorage.getItem(STORAGE_KEY) === "true"); } catch {}
+    function handler() {
+      setSidebarCollapsed((prev) => !prev);
+    }
+    window.addEventListener("toggle-pos-sidebar", handler);
+    return () => window.removeEventListener("toggle-pos-sidebar", handler);
+  }, []);
 
   // Shift state
   const [activeShift,      setActiveShift]      = useState(initialShift);
@@ -386,7 +403,19 @@ export default function POSInterface({
         )}
         {/* ── Header POS ── */}
         <div className="shrink-0 bg-white border-b border-gray-200 px-4 sm:px-5 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            {/* Hamburger toggle sidebar — hanya desktop (lg), mobile pakai header AppShell */}
+            {/* Hamburger toggle — hanya desktop (lg+), mobile pakai header AppShell */}
+            <button
+              onClick={toggleSidebar}
+              title={sidebarCollapsed ? "Tampilkan sidebar" : "Sembunyikan sidebar"}
+              className="hidden lg:flex items-center justify-center w-8 h-8 rounded-lg hover:bg-gray-100 transition shrink-0 cursor-pointer"
+              style={{ color: sidebarCollapsed ? "#2563eb" : "#9ca3af" }}
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
             <span className="text-xl">🛒</span>
             <div className="min-w-0">
               <p className="font-semibold text-gray-900 text-sm leading-tight">Kasir (POS)</p>
