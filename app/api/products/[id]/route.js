@@ -46,6 +46,7 @@ export async function PUT(req, { params }) {
   } catch (e) {
     if (e.code === "P2002") return NextResponse.json({ error: "Nama produk sudah ada" }, { status: 409 });
     if (e.code === "P2025") return NextResponse.json({ error: "Produk tidak ditemukan" }, { status: 404 });
+    console.error("[PUT /api/products/[id]]", e);
     return NextResponse.json({ error: "Gagal mengubah produk" }, { status: 500 });
   }
 }
@@ -67,6 +68,7 @@ export async function DELETE(req, { params }) {
     return NextResponse.json({ success: true });
   } catch (e) {
     if (e.code === "P2025") return NextResponse.json({ error: "Produk tidak ditemukan" }, { status: 404 });
+    console.error("[DELETE /api/products/[id]]", e);
     return NextResponse.json({ error: "Gagal menghapus produk" }, { status: 500 });
   }
 }

@@ -49,7 +49,8 @@ export async function GET(req) {
     }));
 
     return NextResponse.json(enriched);
-  } catch {
+  } catch (e) {
+    console.error("[GET /api/batches]", e);
     return NextResponse.json({ error: "Gagal mengambil batch" }, { status: 500 });
   }
 }
@@ -74,6 +75,12 @@ export async function POST(req) {
 
     const qty = parseInt(quantity);
 
+    // Baca stok sebelum increment untuk noteBefore yang akurat
+    const stockBefore = await prisma.stock.findUnique({
+      where: { productId_branchId: { productId, branchId } },
+      select: { quantity: true },
+    });
+
     const batch = await prisma.productBatch.create({
       data: {
         productId,
@@ -90,23 +97,21 @@ export async function POST(req) {
       },
     });
 
-    // Tambah ke stok aggregate juga
+    // Tambah ke stok aggregate (atomic increment)
     await prisma.stock.updateMany({
       where: { productId, branchId },
       data: { quantity: { increment: qty } },
     });
 
-    // Catat stock log
-    const currentStock = await prisma.stock.findUnique({
-      where: { productId_branchId: { productId, branchId } },
-    });
+    // Catat stock log dengan noteBefore yang sudah dibaca sebelumnya
+    const noteBefore = stockBefore?.quantity ?? 0;
     await prisma.stockLog.create({
       data: {
-        type: "ADJUSTMENT",
-        change: qty,
-        noteBefore: (currentStock?.quantity ?? qty) - qty,
-        noteAfter:  currentStock?.quantity ?? qty,
-        note: `Terima batch ${batchCode} (exp: ${new Date(expiryDate).toLocaleDateString("id-ID")})`,
+        type:       "ADJUSTMENT",
+        change:     qty,
+        noteBefore,
+        noteAfter:  noteBefore + qty,
+        note:       `Terima batch ${batchCode.trim()} (exp: ${new Date(expiryDate).toLocaleDateString("id-ID")})`,
         productId,
         branchId,
         userId: session.user.id,
@@ -114,7 +119,8 @@ export async function POST(req) {
     });
 
     return NextResponse.json({ ...batch, expiryInfo: getExpiryStatus(batch.expiryDate) }, { status: 201 });
-  } catch {
+  } catch (e) {
+    console.error("[POST /api/batches]", e);
     return NextResponse.json({ error: "Gagal membuat batch" }, { status: 500 });
   }
 }

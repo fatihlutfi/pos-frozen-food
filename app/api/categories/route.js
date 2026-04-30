@@ -11,7 +11,8 @@ export async function GET() {
       include: { _count: { select: { products: true } } },
     });
     return NextResponse.json(categories);
-  } catch {
+  } catch (e) {
+    console.error("[GET /api/categories]", e);
     return NextResponse.json({ error: "Gagal mengambil data kategori" }, { status: 500 });
   }
 }
