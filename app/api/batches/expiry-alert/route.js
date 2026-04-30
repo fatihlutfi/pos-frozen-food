@@ -47,7 +47,8 @@ export async function GET(req) {
     };
 
     return NextResponse.json({ batches: enriched, grouped, total: enriched.length });
-  } catch {
+  } catch (e) {
+    console.error("[GET /api/batches/expiry-alert]", e);
     return NextResponse.json({ error: "Gagal mengambil expiry alert" }, { status: 500 });
   }
 }

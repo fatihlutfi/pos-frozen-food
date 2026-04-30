@@ -28,6 +28,7 @@ export async function PUT(req, { params }) {
     if (e.code === "P2025") {
       return NextResponse.json({ error: "Kategori tidak ditemukan" }, { status: 404 });
     }
+    console.error("[PUT /api/categories/[id]]", e);
     return NextResponse.json({ error: "Gagal mengubah kategori" }, { status: 500 });
   }
 }
@@ -56,6 +57,7 @@ export async function DELETE(req, { params }) {
     if (e.code === "P2025") {
       return NextResponse.json({ error: "Kategori tidak ditemukan" }, { status: 404 });
     }
+    console.error("[DELETE /api/categories/[id]]", e);
     return NextResponse.json({ error: "Gagal menghapus kategori" }, { status: 500 });
   }
 }

@@ -1,7 +1,3 @@
-// ============================================================
-// Prisma Schema — POS Frozen Food Multi-Cabang
-// ============================================================
-
 generator client {
   provider = "prisma-client-js"
   output   = "../node_modules/.prisma/client"
@@ -11,9 +7,247 @@ datasource db {
   provider = "postgresql"
 }
 
-// ============================================================
-// ENUM
-// ============================================================
+model Branch {
+  id            String                @id @default(cuid())
+  name          String                @unique
+  address       String?
+  phone         String?
+  isActive      Boolean               @default(true)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  shifts        CashierShift[]
+  batches       ProductBatch[]
+  discountRules ProductDiscountRule[]
+  stockLogs     StockLog[]
+  stockOpnames  StockOpname[]
+  stocks        Stock[]
+  transactions  Transaction[]
+  users         User[]
+
+  @@map("branches")
+}
+
+model User {
+  id           String         @id @default(cuid())
+  name         String
+  email        String         @unique
+  password     String
+  role         Role           @default(KASIR)
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  branchId     String?
+  shifts       CashierShift[]
+  stockLogs    StockLog[]
+  stockOpnames StockOpname[]
+  transactions Transaction[]
+  branch       Branch?        @relation(fields: [branchId], references: [id])
+
+  @@map("users")
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  products  Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id               String                @id @default(cuid())
+  name             String                @unique
+  description      String?
+  price            Int
+  imageUrl         String?
+  isActive         Boolean               @default(true)
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  categoryId       String
+  costPrice        Int                   @default(0)
+  storageZone      StorageZone           @default(FROZEN)
+  batches          ProductBatch[]
+  discountRules    ProductDiscountRule[]
+  category         Category              @relation(fields: [categoryId], references: [id])
+  stockLogs        StockLog[]
+  opnameItems      StockOpnameItem[]
+  stocks           Stock[]
+  transactionItems TransactionItem[]
+
+  @@index([categoryId, isActive])
+  @@index([isActive, name])
+  @@map("products")
+}
+
+model Stock {
+  id            String   @id @default(cuid())
+  quantity      Int      @default(0)
+  lowStockAlert Int      @default(10)
+  updatedAt     DateTime @updatedAt
+  productId     String
+  branchId      String
+  branch        Branch   @relation(fields: [branchId], references: [id])
+  product       Product  @relation(fields: [productId], references: [id])
+
+  @@unique([productId, branchId])
+  @@map("stocks")
+}
+
+model StockLog {
+  id            String       @id @default(cuid())
+  type          StockLogType
+  change        Int
+  noteBefore    Int
+  noteAfter     Int
+  note          String?
+  createdAt     DateTime     @default(now())
+  productId     String
+  branchId      String
+  userId        String?
+  transactionId String?
+  branch        Branch       @relation(fields: [branchId], references: [id])
+  product       Product      @relation(fields: [productId], references: [id])
+  transaction   Transaction? @relation(fields: [transactionId], references: [id])
+  user          User?        @relation(fields: [userId], references: [id])
+
+  @@index([branchId, createdAt(sort: Desc)])
+  @@index([productId, branchId, createdAt(sort: Desc)])
+  @@index([transactionId])
+  @@map("stock_logs")
+}
+
+model Transaction {
+  id             String            @id @default(cuid())
+  invoiceNumber  String            @unique
+  paymentMethod  PaymentMethod
+  status         TransactionStatus @default(COMPLETED)
+  subtotal       Int
+  discountAmount Int               @default(0)
+  grandTotal     Int
+  amountPaid     Int
+  changeAmount   Int               @default(0)
+  note           String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  branchId       String
+  userId         String
+  voidReason     String?
+  voidedAt       DateTime?
+  shiftId        String?
+  stockLogs      StockLog[]
+  items          TransactionItem[]
+  branch         Branch            @relation(fields: [branchId], references: [id])
+  shift          CashierShift?     @relation(fields: [shiftId], references: [id])
+  user           User              @relation(fields: [userId], references: [id])
+
+  @@index([branchId, createdAt(sort: Desc)])
+  @@index([branchId, status, createdAt(sort: Desc)])
+  @@index([shiftId])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("transactions")
+}
+
+model TransactionItem {
+  id              String      @id @default(cuid())
+  quantity        Int
+  price           Int
+  subtotal        Int
+  createdAt       DateTime    @default(now())
+  transactionId   String
+  productId       String
+  costPrice       Int         @default(0)
+  discountPercent Float       @default(0)
+  product         Product     @relation(fields: [productId], references: [id])
+  transaction     Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([transactionId])
+  @@map("transaction_items")
+}
+
+model CashierShift {
+  id             String        @id @default(cuid())
+  status         ShiftStatus   @default(OPEN)
+  openingBalance Int
+  closingBalance Int?
+  note           String?
+  openedAt       DateTime      @default(now())
+  closedAt       DateTime?
+  userId         String
+  branchId       String
+  branch         Branch        @relation(fields: [branchId], references: [id])
+  user           User          @relation(fields: [userId], references: [id])
+  transactions   Transaction[]
+
+  @@index([branchId, status, openedAt(sort: Desc)])
+  @@index([userId, status])
+  @@map("cashier_shifts")
+}
+
+model StockOpname {
+  id          String            @id @default(cuid())
+  status      StockOpnameStatus @default(DRAFT)
+  note        String?
+  confirmedAt DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @default(now()) @updatedAt
+  branchId    String
+  userId      String
+  items       StockOpnameItem[]
+  branch      Branch            @relation(fields: [branchId], references: [id])
+  user        User              @relation(fields: [userId], references: [id])
+
+  @@map("stock_opnames")
+}
+
+model StockOpnameItem {
+  id          String      @id @default(cuid())
+  systemQty   Int
+  physicalQty Int?
+  opnameId    String
+  productId   String
+  opname      StockOpname @relation(fields: [opnameId], references: [id], onDelete: Cascade)
+  product     Product     @relation(fields: [productId], references: [id])
+
+  @@unique([opnameId, productId])
+  @@map("stock_opname_items")
+}
+
+model ProductBatch {
+  id             String    @id @default(cuid())
+  batchCode      String
+  productionDate DateTime?
+  expiryDate     DateTime
+  quantity       Int       @default(0)
+  initialQty     Int       @default(0)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @default(now()) @updatedAt
+  productId      String
+  branchId       String
+  branch         Branch    @relation(fields: [branchId], references: [id])
+  product        Product   @relation(fields: [productId], references: [id])
+
+  @@index([productId, branchId, expiryDate])
+  @@map("product_batches")
+}
+
+model ProductDiscountRule {
+  id              String   @id @default(cuid())
+  minQty          Int
+  discountPercent Float
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  productId       String
+  branchId        String
+  branch          Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, branchId, minQty])
+  @@map("product_discount_rules")
+}
 
 enum Role {
   ADMIN
@@ -37,335 +271,21 @@ enum ShiftStatus {
 }
 
 enum StockLogType {
-  SALE        // pengurangan stok karena penjualan
-  ADJUSTMENT  // penyesuaian stok manual oleh admin
-  INITIAL     // stok awal saat produk/cabang dibuat
-  RETURN      // pengembalian stok karena transaksi dibatalkan
-  OPNAME      // penyesuaian stok karena stock opname
+  SALE
+  ADJUSTMENT
+  INITIAL
+  RETURN
+  OPNAME
 }
 
 enum StockOpnameStatus {
-  DRAFT      // sedang diisi, belum dikonfirmasi
-  CONFIRMED  // sudah dikonfirmasi, stok diperbarui
+  DRAFT
+  CONFIRMED
 }
 
 enum StorageZone {
-  FROZEN       // freezer / -18°C
-  CHILLED      // kulkas / 0–4°C
-  AMBIENT      // suhu ruang
-  DISPLAY_ONLY // display / tidak dijual lepas
-}
-
-// ============================================================
-// BRANCH — Cabang toko
-// ============================================================
-
-model Branch {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  address   String?
-  phone     String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  users         User[]
-  stocks        Stock[]
-  transactions  Transaction[]
-  stockLogs     StockLog[]
-  shifts        CashierShift[]
-  stockOpnames  StockOpname[]
-  discountRules ProductDiscountRule[]
-  batches       ProductBatch[]
-
-  @@map("branches")
-}
-
-// ============================================================
-// USER — Admin dan Kasir
-// ============================================================
-
-model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      Role     @default(KASIR)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Kasir wajib punya cabang; Admin boleh null (akses semua)
-  branchId String?
-  branch   Branch? @relation(fields: [branchId], references: [id])
-
-  transactions Transaction[]
-  stockLogs    StockLog[]
-  shifts       CashierShift[]
-  stockOpnames StockOpname[]
-
-  @@map("users")
-}
-
-// ============================================================
-// CATEGORY — Kategori produk
-// ============================================================
-
-model Category {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  products Product[]
-
-  @@map("categories")
-}
-
-// ============================================================
-// PRODUCT — Produk frozen food
-// ============================================================
-
-model Product {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  description String?
-  price       Int      // harga jual dalam Rupiah (tanpa desimal)
-  costPrice   Int      @default(0) // harga beli / HPP (admin only)
-  imageUrl    String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  storageZone StorageZone @default(FROZEN)
-
-  categoryId String
-  category   Category @relation(fields: [categoryId], references: [id])
-
-  stocks           Stock[]
-  transactionItems TransactionItem[]
-  stockLogs        StockLog[]
-  opnameItems      StockOpnameItem[]
-  discountRules    ProductDiscountRule[]
-  batches          ProductBatch[]
-
-  @@map("products")
-}
-
-// ============================================================
-// STOCK — Stok per produk per cabang
-// ============================================================
-
-model Stock {
-  id             String   @id @default(cuid())
-  quantity       Int      @default(0)
-  lowStockAlert  Int      @default(10) // notifikasi jika stok <= nilai ini
-  updatedAt      DateTime @updatedAt
-
-  productId String
-  product   Product @relation(fields: [productId], references: [id])
-
-  branchId String
-  branch   Branch @relation(fields: [branchId], references: [id])
-
-  // Setiap produk hanya boleh punya 1 entri stok per cabang
-  @@unique([productId, branchId])
-  @@map("stocks")
-}
-
-// ============================================================
-// STOCK LOG — Histori perubahan stok
-// ============================================================
-
-model StockLog {
-  id        String       @id @default(cuid())
-  type      StockLogType
-  change    Int          // positif = tambah, negatif = kurang
-  noteBefore Int         // stok sebelum perubahan
-  noteAfter  Int         // stok setelah perubahan
-  note      String?      // keterangan tambahan
-  createdAt DateTime     @default(now())
-
-  productId String
-  product   Product @relation(fields: [productId], references: [id])
-
-  branchId String
-  branch   Branch @relation(fields: [branchId], references: [id])
-
-  // User yang melakukan perubahan (null jika sistem otomatis)
-  userId String?
-  user   User?   @relation(fields: [userId], references: [id])
-
-  // Referensi ke transaksi jika perubahan karena penjualan
-  transactionId String?
-  transaction   Transaction? @relation(fields: [transactionId], references: [id])
-
-  @@map("stock_logs")
-}
-
-// ============================================================
-// TRANSACTION — Transaksi penjualan
-// ============================================================
-
-model Transaction {
-  id            String            @id @default(cuid())
-  invoiceNumber String            @unique
-  paymentMethod PaymentMethod
-  status        TransactionStatus @default(COMPLETED)
-  subtotal      Int               // total sebelum diskon
-  discountAmount Int              @default(0)
-  grandTotal    Int               // total setelah diskon
-  amountPaid    Int               // jumlah dibayar
-  changeAmount  Int               @default(0) // kembalian
-  note          String?
-  voidReason    String?           // alasan void (hanya untuk status VOIDED)
-  voidedAt      DateTime?         // waktu void dilakukan
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
-
-  branchId String
-  branch   Branch @relation(fields: [branchId], references: [id])
-
-  // Kasir yang memproses transaksi
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-
-  // Shift kasir (opsional — null jika admin)
-  shiftId String?
-  shift   CashierShift? @relation(fields: [shiftId], references: [id])
-
-  items     TransactionItem[]
-  stockLogs StockLog[]
-
-  @@map("transactions")
-}
-
-// ============================================================
-// TRANSACTION ITEM — Detail item dalam transaksi
-// ============================================================
-
-model TransactionItem {
-  id        String   @id @default(cuid())
-  quantity        Int
-  price           Int      // harga saat transaksi (setelah diskon qty, snapshot)
-  costPrice       Int      @default(0) // HPP saat transaksi (snapshot)
-  discountPercent Float    @default(0) // diskon qty % yang diterapkan (0 = tidak ada)
-  subtotal        Int      // quantity * price
-  createdAt       DateTime @default(now())
-
-  transactionId String
-  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
-
-  productId String
-  product   Product @relation(fields: [productId], references: [id])
-
-  @@map("transaction_items")
-}
-
-// ============================================================
-// CASHIER SHIFT — Sesi kerja kasir
-// ============================================================
-
-model CashierShift {
-  id             String      @id @default(cuid())
-  status         ShiftStatus @default(OPEN)
-  openingBalance Int         // modal kas awal (uang di laci saat buka)
-  closingBalance Int?        // kas fisik akhir (diisi saat tutup shift)
-  note           String?
-  openedAt       DateTime    @default(now())
-  closedAt       DateTime?
-
-  userId   String
-  user     User   @relation(fields: [userId], references: [id])
-
-  branchId String
-  branch   Branch @relation(fields: [branchId], references: [id])
-
-  transactions Transaction[]
-
-  @@map("cashier_shifts")
-}
-
-// ============================================================
-// STOCK OPNAME — Sesi penghitungan stok fisik
-// ============================================================
-
-model StockOpname {
-  id          String              @id @default(cuid())
-  status      StockOpnameStatus   @default(DRAFT)
-  note        String?
-  confirmedAt DateTime?
-  createdAt   DateTime            @default(now())
-  updatedAt   DateTime            @updatedAt
-
-  branchId String
-  branch   Branch @relation(fields: [branchId], references: [id])
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-
-  items StockOpnameItem[]
-
-  @@map("stock_opnames")
-}
-
-model StockOpnameItem {
-  id          String  @id @default(cuid())
-  systemQty   Int     // stok sistem saat opname dimulai
-  physicalQty Int?    // stok fisik hasil hitung (null = belum diisi)
-
-  opnameId String
-  opname   StockOpname @relation(fields: [opnameId], references: [id], onDelete: Cascade)
-
-  productId String
-  product   Product @relation(fields: [productId], references: [id])
-
-  @@unique([opnameId, productId])
-  @@map("stock_opname_items")
-}
-
-// ============================================================
-// PRODUCT BATCH — Batch stok dengan expiry tracking (FIFO)
-// ============================================================
-
-model ProductBatch {
-  id             String    @id @default(cuid())
-  batchCode      String
-  productionDate DateTime?
-  expiryDate     DateTime
-  quantity       Int       @default(0)  // sisa stok batch ini
-  initialQty     Int       @default(0)  // qty awal saat diterima
-  isActive       Boolean   @default(true)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-
-  productId String
-  product   Product @relation(fields: [productId], references: [id])
-
-  branchId String
-  branch   Branch @relation(fields: [branchId], references: [id])
-
-  @@index([productId, branchId, expiryDate])
-  @@map("product_batches")
-}
-
-// ============================================================
-// PRODUCT DISCOUNT RULE — Aturan diskon berdasarkan qty
-// ============================================================
-
-model ProductDiscountRule {
-  id              String  @id @default(cuid())
-  minQty          Int     // minimal qty untuk trigger diskon
-  discountPercent Float   // persen diskon (misal: 10.0 = 10%)
-  isActive        Boolean @default(true)
-  createdAt       DateTime @default(now())
-
-  productId String
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  branchId String
-  branch   Branch  @relation(fields: [branchId], references: [id], onDelete: Cascade)
-
-  @@unique([productId, branchId, minQty])
-  @@map("product_discount_rules")
+  FROZEN
+  CHILLED
+  AMBIENT
+  DISPLAY_ONLY
 }

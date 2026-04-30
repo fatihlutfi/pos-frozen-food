@@ -17,6 +17,7 @@ export async function GET(req) {
 
   const branches = await prisma.branch.findMany({
     orderBy: { name: "asc" },
+    take: 100,
     include: {
       _count: { select: { users: true, transactions: true } },
     },

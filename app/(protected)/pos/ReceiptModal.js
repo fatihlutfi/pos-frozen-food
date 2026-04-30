@@ -15,6 +15,8 @@ export default function ReceiptModal({ transaction, onClose, onNewTransaction })
 
   if (!transaction) return null;
 
+  const isOffline = transaction._offline === true;
+
   const {
     items, branch, user, invoiceNumber, paymentMethod,
     subtotal, discountAmount, grandTotal, amountPaid, changeAmount, createdAt,
@@ -27,11 +29,24 @@ export default function ReceiptModal({ transaction, onClose, onNewTransaction })
         {/* ── Modal header ── */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
           <div>
-            <h2 className="font-semibold text-gray-900">Transaksi Berhasil!</h2>
-            <p className="text-xs text-green-600 mt-0.5">✓ Stok telah diperbarui</p>
+            <h2 className="font-semibold text-gray-900">
+              {isOffline ? "Transaksi Disimpan Offline" : "Transaksi Berhasil!"}
+            </h2>
+            <p className={`text-xs mt-0.5 ${isOffline ? "text-orange-600" : "text-green-600"}`}>
+              {isOffline
+                ? "Akan dikirim ke server saat koneksi kembali"
+                : "✓ Stok telah diperbarui"}
+            </p>
           </div>
-          <span className="text-3xl">✅</span>
+          <span className="text-3xl">{isOffline ? "📵" : "✅"}</span>
         </div>
+
+        {/* ── Offline notice ── */}
+        {isOffline && (
+          <div className="px-5 py-2 bg-orange-50 border-b border-orange-100 text-xs text-orange-700 font-medium">
+            Struk sementara — nomor invoice final akan dibuat saat sinkronisasi
+          </div>
+        )}
 
         {/* ── Receipt preview ── */}
         <div className="overflow-y-auto flex-1 px-4 py-4">

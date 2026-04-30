@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import prismaTx from "@/lib/prisma-tx";
 import { NextResponse } from "next/server";
 
 // GET /api/transactions/[id]
@@ -15,13 +16,11 @@ export async function GET(req, { params }) {
     include: {
       items: { include: { product: { select: { name: true } } } },
       branch: { select: { name: true, address: true } },
-      user: { select: { name: true } },
+      user:   { select: { name: true } },
     },
   });
 
-  if (!transaction) {
-    return NextResponse.json({ error: "Transaksi tidak ditemukan" }, { status: 404 });
-  }
+  if (!transaction) return NextResponse.json({ error: "Transaksi tidak ditemukan" }, { status: 404 });
 
   if (session.user.role === "KASIR" && transaction.branchId !== session.user.branchId) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -30,8 +29,7 @@ export async function GET(req, { params }) {
   return NextResponse.json(transaction);
 }
 
-// PATCH /api/transactions/[id]
-// body: { voidReason: "..." } → VOIDED (admin only, reason wajib)
+// PATCH /api/transactions/[id] — void transaksi (admin only), atomik
 export async function PATCH(req, { params }) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -47,14 +45,13 @@ export async function PATCH(req, { params }) {
     return NextResponse.json({ error: "Alasan void wajib diisi" }, { status: 400 });
   }
 
+  // Baca transaksi + items di luar tx (pre-check)
   const transaction = await prisma.transaction.findUnique({
     where: { id },
     include: { items: true },
   });
 
-  if (!transaction) {
-    return NextResponse.json({ error: "Transaksi tidak ditemukan" }, { status: 404 });
-  }
+  if (!transaction) return NextResponse.json({ error: "Transaksi tidak ditemukan" }, { status: 404 });
 
   if (transaction.status !== "COMPLETED") {
     return NextResponse.json(
@@ -64,61 +61,61 @@ export async function PATCH(req, { params }) {
   }
 
   try {
-    // Update status transaksi ke VOIDED
-    await prisma.transaction.update({
-      where: { id },
-      data: {
-        status: "VOIDED",
-        voidReason: body.voidReason.trim(),
-        voidedAt: new Date(),
-      },
-    });
+    const voidReason = body.voidReason.trim();
 
-    // Kembalikan stok tiap item (sequential — pgBouncer)
-    for (const item of transaction.items) {
-      const stock = await prisma.stock.findUnique({
-        where: { productId_branchId: { productId: item.productId, branchId: transaction.branchId } },
+    const updated = await prismaTx.$transaction(async (tx) => {
+      // 1. Update status ke VOIDED
+      await tx.transaction.update({
+        where: { id },
+        data: { status: "VOIDED", voidReason, voidedAt: new Date() },
       });
 
-      if (stock) {
-        const newQty = stock.quantity + item.quantity;
-
-        await prisma.stock.update({
+      // 2. Kembalikan stok tiap item + catat log (atomic increment — aman dari race condition)
+      for (const item of transaction.items) {
+        // Baca qty sebelum increment untuk log
+        const stockBefore = await tx.stock.findUnique({
           where: { productId_branchId: { productId: item.productId, branchId: transaction.branchId } },
-          data: { quantity: newQty },
+          select: { quantity: true },
         });
 
-        await prisma.stockLog.create({
-          data: {
-            type: "RETURN",
-            change: item.quantity,
-            noteBefore: stock.quantity,
-            noteAfter: newQty,
-            note: `Void ${transaction.invoiceNumber} — ${body.voidReason.trim()}`,
-            productId: item.productId,
-            branchId: transaction.branchId,
-            userId: session.user.id,
-            transactionId: transaction.id,
-          },
-        });
+        if (stockBefore !== null) {
+          // Atomic increment — tidak perlu guard karena penambahan selalu valid
+          await tx.stock.update({
+            where: { productId_branchId: { productId: item.productId, branchId: transaction.branchId } },
+            data:  { quantity: { increment: item.quantity } },
+          });
+
+          await tx.stockLog.create({
+            data: {
+              type:          "RETURN",
+              change:        item.quantity,
+              noteBefore:    stockBefore.quantity,
+              noteAfter:     stockBefore.quantity + item.quantity,
+              note:          `Void ${transaction.invoiceNumber} — ${voidReason}`,
+              productId:     item.productId,
+              branchId:      transaction.branchId,
+              userId:        session.user.id,
+              transactionId: transaction.id,
+            },
+          });
+        }
       }
-    }
 
-    const updated = await prisma.transaction.findUnique({
-      where: { id },
-      include: {
-        items: { include: { product: { select: { name: true } } } },
-        branch: { select: { name: true, address: true } },
-        user: { select: { name: true } },
-      },
+      // 3. Return transaksi yang sudah di-void
+      return tx.transaction.findUnique({
+        where: { id },
+        include: {
+          items: { include: { product: { select: { name: true } } } },
+          branch: { select: { name: true, address: true } },
+          user:   { select: { name: true } },
+        },
+      });
     });
 
     return NextResponse.json(updated);
+
   } catch (e) {
     console.error("[PATCH /api/transactions/[id]] void error:", e);
-    return NextResponse.json(
-      { error: "Gagal memproses void" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Gagal memproses void" }, { status: 500 });
   }
 }

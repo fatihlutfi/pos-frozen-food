@@ -79,6 +79,8 @@ export async function DELETE(req, { params }) {
     });
     return NextResponse.json({ ok: true });
   } catch (e) {
+    if (e.code === "P2025") return NextResponse.json({ error: "Aturan tidak ditemukan" }, { status: 404 });
+    console.error("[DELETE /api/products/[id]/discount-rules]", e);
     return NextResponse.json({ error: "Gagal menghapus aturan" }, { status: 500 });
   }
 }

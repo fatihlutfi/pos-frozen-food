@@ -6,109 +6,126 @@ import Link from "next/link";
 
 export const metadata = { title: "Dashboard — POS Frozen Food" };
 
+const LOW_STOCK_THRESHOLD = 20;
+
 async function getDashboardStats(session) {
-  const today = startOfToday();
-  const isAdmin = session.user.role === "ADMIN";
+  const today    = startOfToday();
+  const isAdmin  = session.user.role === "ADMIN";
   const branchFilter = isAdmin ? {} : { branchId: session.user.branchId };
 
-  // Total penjualan & jumlah transaksi hari ini
-  const todayStats = await prisma.transaction.aggregate({
-    where: { status: "COMPLETED", createdAt: { gte: today }, ...branchFilter },
-    _sum: { grandTotal: true },
-    _count: { id: true },
-  });
-
-  // Total penjualan bulan ini
   const firstOfMonth = new Date();
   firstOfMonth.setDate(1);
   firstOfMonth.setHours(0, 0, 0, 0);
 
-  const monthStats = await prisma.transaction.aggregate({
-    where: { status: "COMPLETED", createdAt: { gte: firstOfMonth }, ...branchFilter },
-    _sum: { grandTotal: true },
-  });
-
-  // Stok menipis — cek per cabang (bukan total gabungan)
-  // Admin: semua cabang, Kasir: cabangnya saja
-  const LOW_STOCK_THRESHOLD = 20;
-  const allStocks = await prisma.stock.findMany({
-    where: branchFilter,
-    select: {
-      quantity: true,
-      lowStockAlert: true,
-      product: { select: { name: true } },
-      branch: { select: { name: true } },
-    },
-  });
-
-  const lowStockItems = allStocks
-    .filter((s) => s.quantity <= LOW_STOCK_THRESHOLD)
-    .sort((a, b) => a.quantity - b.quantity); // paling sedikit dulu
-
-  // Transaksi terbaru (5 terakhir)
-  const recentTransactions = await prisma.transaction.findMany({
-    where: { ...branchFilter },
-    orderBy: { createdAt: "desc" },
-    take: 5,
-    include: {
-      user: { select: { name: true } },
-      branch: { select: { name: true } },
-    },
-  });
-
-  // Cabang aktif (admin only)
-  const branchCount = isAdmin ? await prisma.branch.count({ where: { isActive: true } }) : null;
-
-  // Expiry alert — batch yang kadaluarsa dalam 30 hari
   const expiryAlertCutoff = new Date();
   expiryAlertCutoff.setDate(expiryAlertCutoff.getDate() + 30);
-  const expiryBatches = await prisma.productBatch.findMany({
-    where: {
-      isActive: true,
-      quantity: { gt: 0 },
-      expiryDate: { lte: expiryAlertCutoff },
-      ...branchFilter,
-    },
-    include: {
-      product: { select: { name: true } },
-      branch:  { select: { name: true } },
-    },
-    orderBy: { expiryDate: "asc" },
-  });
 
-  // Net profit (admin only) — ambil HPP dari item transaksi
+  // ── Semua query paralel dalam satu Promise.all ────────────────────────────
+  const [
+    todayStats,
+    monthStats,
+    lowStockItems,
+    recentTransactions,
+    branchCount,
+    expiryBatches,
+    profitData,
+  ] = await Promise.all([
+    // Penjualan & jumlah transaksi hari ini
+    prisma.transaction.aggregate({
+      where: { status: "COMPLETED", createdAt: { gte: today }, ...branchFilter },
+      _sum:   { grandTotal: true },
+      _count: { id: true },
+    }),
+
+    // Penjualan bulan ini
+    prisma.transaction.aggregate({
+      where: { status: "COMPLETED", createdAt: { gte: firstOfMonth }, ...branchFilter },
+      _sum: { grandTotal: true },
+    }),
+
+    // Stok menipis — filter di SQL (quantity <= 20), sudah sorted
+    prisma.stock.findMany({
+      where: { ...branchFilter, quantity: { lte: LOW_STOCK_THRESHOLD } },
+      select: {
+        quantity:     true,
+        lowStockAlert: true,
+        product: { select: { name: true } },
+        branch:  { select: { name: true } },
+      },
+      orderBy: { quantity: "asc" },
+    }),
+
+    // Transaksi terbaru (5 terakhir)
+    prisma.transaction.findMany({
+      where:   { ...branchFilter },
+      orderBy: { createdAt: "desc" },
+      take:    5,
+      include: {
+        user:   { select: { name: true } },
+        branch: { select: { name: true } },
+      },
+    }),
+
+    // Cabang aktif (admin only)
+    isAdmin
+      ? prisma.branch.count({ where: { isActive: true } })
+      : Promise.resolve(null),
+
+    // Batch kadaluarsa dalam 30 hari
+    prisma.productBatch.findMany({
+      where: {
+        isActive:   true,
+        quantity:   { gt: 0 },
+        expiryDate: { lte: expiryAlertCutoff },
+        ...branchFilter,
+      },
+      include: {
+        product: { select: { name: true } },
+        branch:  { select: { name: true } },
+      },
+      orderBy: { expiryDate: "asc" },
+    }),
+
+    // Net profit — admin only: ambil HPP dari transaction items
+    isAdmin
+      ? Promise.all([
+          prisma.transactionItem.findMany({
+            where:  { transaction: { status: "COMPLETED", createdAt: { gte: today } } },
+            select: { costPrice: true, quantity: true, subtotal: true },
+          }),
+          prisma.transactionItem.findMany({
+            where:  { transaction: { status: "COMPLETED", createdAt: { gte: firstOfMonth } } },
+            select: { costPrice: true, quantity: true, subtotal: true },
+          }),
+        ])
+      : Promise.resolve(null),
+  ]);
+
+  // ── Kalkulasi net profit (admin) ──────────────────────────────────────────
   let todayNetProfit = null;
   let monthNetProfit = null;
   let avgMarginPct   = null;
-  if (isAdmin) {
-    const [todayItems, monthItems] = await Promise.all([
-      prisma.transactionItem.findMany({
-        where: { transaction: { status: "COMPLETED", createdAt: { gte: today } } },
-        select: { costPrice: true, quantity: true, subtotal: true },
-      }),
-      prisma.transactionItem.findMany({
-        where: { transaction: { status: "COMPLETED", createdAt: { gte: firstOfMonth } } },
-        select: { costPrice: true, quantity: true, subtotal: true },
-      }),
-    ]);
+
+  if (isAdmin && profitData) {
+    const [todayItems, monthItems] = profitData;
+
     const todaySalesVal  = todayStats._sum.grandTotal ?? 0;
-    const todayHPP       = todayItems.reduce((s, i) => s + i.costPrice * i.quantity, 0);
+    const todayHPP       = todayItems.reduce((s, i) => s + Number(i.costPrice) * Number(i.quantity), 0);
     todayNetProfit        = todaySalesVal - todayHPP;
 
     const monthSalesVal  = monthStats._sum.grandTotal ?? 0;
-    const monthHPP       = monthItems.reduce((s, i) => s + i.costPrice * i.quantity, 0);
+    const monthHPP       = monthItems.reduce((s, i) => s + Number(i.costPrice) * Number(i.quantity), 0);
     monthNetProfit        = monthSalesVal - monthHPP;
 
-    const totalRevMonth  = monthSalesVal;
-    avgMarginPct          = totalRevMonth > 0
-      ? Math.round((monthNetProfit / totalRevMonth) * 100)
+    avgMarginPct = monthSalesVal > 0
+      ? Math.round((monthNetProfit / monthSalesVal) * 100)
       : 0;
   }
 
   return {
-    todaySales: todayStats._sum.grandTotal ?? 0,
+    todaySales:       todayStats._sum.grandTotal ?? 0,
     todayTransactions: todayStats._count.id ?? 0,
-    monthSales: monthStats._sum.grandTotal ?? 0,
+    monthSales:       monthStats._sum.grandTotal ?? 0,
     lowStockItems,
     recentTransactions,
     branchCount,
@@ -121,7 +138,7 @@ async function getDashboardStats(session) {
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
-  const stats = await getDashboardStats(session);
+  const stats   = await getDashboardStats(session);
   const isAdmin = session.user.role === "ADMIN";
 
   return (
@@ -333,13 +350,13 @@ export default async function DashboardPage() {
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
         <h2 className="font-semibold text-gray-800 mb-4">Akses Cepat</h2>
         <div className="flex flex-wrap gap-3">
-          <QuickLink href="/pos" label="Buka Kasir" icon="🛒" color="bg-blue-600" />
-          <QuickLink href="/transactions" label="Riwayat Transaksi" icon="📋" color="bg-gray-700" />
+          <QuickLink href="/pos"          label="Buka Kasir"         icon="🛒" color="bg-blue-600"  />
+          <QuickLink href="/transactions" label="Riwayat Transaksi"  icon="📋" color="bg-gray-700"  />
           {isAdmin && (
             <>
-              <QuickLink href="/products" label="Kelola Produk" icon="📦" color="bg-green-600" />
-              <QuickLink href="/reports" label="Laporan" icon="📊" color="bg-purple-600" />
-              <QuickLink href="/admin/users" label="Kelola User" icon="👥" color="bg-orange-500" />
+              <QuickLink href="/products"    label="Kelola Produk" icon="📦" color="bg-green-600"  />
+              <QuickLink href="/reports"     label="Laporan"       icon="📊" color="bg-purple-600" />
+              <QuickLink href="/admin/users" label="Kelola User"   icon="👥" color="bg-orange-500" />
             </>
           )}
         </div>
@@ -350,11 +367,11 @@ export default async function DashboardPage() {
 
 function StatCard({ label, value, sub, color, icon }) {
   const colors = {
-    blue: "bg-blue-50 text-blue-600",
-    green: "bg-green-50 text-green-600",
+    blue:   "bg-blue-50 text-blue-600",
+    green:  "bg-green-50 text-green-600",
     purple: "bg-purple-50 text-purple-600",
     orange: "bg-orange-50 text-orange-600",
-    red: "bg-red-50 text-red-600",
+    red:    "bg-red-50 text-red-600",
   };
 
   return (

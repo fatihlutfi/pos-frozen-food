@@ -30,9 +30,11 @@ export async function GET(req) {
         },
       },
       orderBy: { name: "asc" },
+      take: 500,
     });
     return NextResponse.json(products);
-  } catch {
+  } catch (e) {
+    console.error("[GET /api/products]", e);
     return NextResponse.json({ error: "Gagal mengambil produk" }, { status: 500 });
   }
 }
@@ -104,6 +106,7 @@ export async function POST(req) {
     if (e.code === "P2002") {
       return NextResponse.json({ error: "Nama produk sudah ada" }, { status: 409 });
     }
+    console.error("[POST /api/products]", e);
     return NextResponse.json({ error: "Gagal membuat produk" }, { status: 500 });
   }
 }

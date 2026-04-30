@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import prismaTx from "@/lib/prisma-tx";
 import { NextResponse } from "next/server";
 
 // POST /api/stock-opname/[id]/confirm — konfirmasi opname, update stok
@@ -50,47 +51,45 @@ export async function POST(req, { params }) {
     const shortId = id.slice(-8).toUpperCase();
     const logNote = `Stock Opname #${shortId}`;
 
-    // Proses setiap item: update stok + catat log
-    // Hanya proses item yang berubah (selisih != 0) agar log tidak membludak
+    // Proses atomik: update stok + log + konfirmasi dalam satu $transaction
     const changedItems = opname.items.filter(
       (item) => item.physicalQty !== item.systemQty
     );
 
-    for (const item of changedItems) {
-      const before  = item.systemQty;
-      const after   = item.physicalQty;
-      const change  = after - before;
+    const updated = await prismaTx.$transaction(async (tx) => {
+      for (const item of changedItems) {
+        const before = item.systemQty;
+        const after  = item.physicalQty;
+        const change = after - before;
 
-      // Update stok
-      await prisma.stock.updateMany({
-        where: { productId: item.productId, branchId: opname.branchId },
-        data:  { quantity: after },
-      });
+        await tx.stock.updateMany({
+          where: { productId: item.productId, branchId: opname.branchId },
+          data:  { quantity: after },
+        });
 
-      // Catat stock log
-      await prisma.stockLog.create({
-        data: {
-          type:       "OPNAME",
-          change,
-          noteBefore: before,
-          noteAfter:  after,
-          note:       logNote,
-          productId:  item.productId,
-          branchId:   opname.branchId,
-          userId:     session.user.id,
+        await tx.stockLog.create({
+          data: {
+            type:       "OPNAME",
+            change,
+            noteBefore: before,
+            noteAfter:  after,
+            note:       logNote,
+            productId:  item.productId,
+            branchId:   opname.branchId,
+            userId:     session.user.id,
+          },
+        });
+      }
+
+      return tx.stockOpname.update({
+        where: { id },
+        data:  { status: "CONFIRMED", confirmedAt: new Date() },
+        include: {
+          branch: { select: { name: true } },
+          user:   { select: { name: true } },
+          _count: { select: { items: true } },
         },
       });
-    }
-
-    // Tandai opname sebagai CONFIRMED
-    const updated = await prisma.stockOpname.update({
-      where: { id },
-      data:  { status: "CONFIRMED", confirmedAt: new Date() },
-      include: {
-        branch: { select: { name: true } },
-        user:   { select: { name: true } },
-        _count: { select: { items: true } },
-      },
     });
 
     return NextResponse.json({

@@ -7,10 +7,12 @@ export async function GET() {
   try {
     const categories = await prisma.category.findMany({
       orderBy: { name: "asc" },
+      take: 200,
       include: { _count: { select: { products: true } } },
     });
     return NextResponse.json(categories);
-  } catch {
+  } catch (e) {
+    console.error("[GET /api/categories]", e);
     return NextResponse.json({ error: "Gagal mengambil data kategori" }, { status: 500 });
   }
 }
