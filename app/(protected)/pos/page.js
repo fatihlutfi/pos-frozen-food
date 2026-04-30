@@ -60,7 +60,7 @@ export default async function POSPage() {
       orderBy: { expiryDate: "asc" },
     }),
 
-    // Bundling aktif — fresh setiap render
+    // Bundling aktif — fail-safe jika tabel belum ada
     prisma.bundle.findMany({
       where: {
         isActive: true,
@@ -77,10 +77,10 @@ export default async function POSPage() {
         branch: { select: { name: true } },
       },
       orderBy: { createdAt: "desc" },
-    }),
+    }).catch(() => []),
 
-    // Promo expiry settings — untuk threshold diskon dinamis
-    prisma.promoExpirySettings.findUnique({ where: { id: "singleton" } }),
+    // Promo expiry settings — fail-safe jika tabel belum ada
+    prisma.promoExpirySettings.findUnique({ where: { id: "singleton" } }).catch(() => null),
   ]);
 
   // Jangan kirim costPrice ke kasir di client

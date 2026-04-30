@@ -102,7 +102,7 @@ async function getDashboardStats(session) {
         ])
       : Promise.resolve(null),
 
-    // Bundling aktif hari ini
+    // Bundling aktif hari ini — fail-safe jika tabel belum ada
     prisma.bundle.findMany({
       where: {
         isActive: true,
@@ -117,7 +117,7 @@ async function getDashboardStats(session) {
         branch: { select: { name: true } },
       },
       orderBy: { createdAt: "desc" },
-    }),
+    }).catch(() => []),
 
     // Jumlah aturan diskon qty aktif
     prisma.productDiscountRule.count({
