@@ -23,11 +23,14 @@ function getExpiryInfo(expiryDate) {
 }
 
 export default function POSInterface({
-  products, categories, branches,
+  products: initialProducts, categories, branches,
   isAdmin, defaultBranchId, defaultBranchName, cashierName,
   userId, initialShift, batchAlerts = [],
 }) {
   const router = useRouter();
+
+  // Salinan lokal produk — diupdate langsung setelah transaksi tanpa fetch ulang
+  const [products, setProducts] = useState(initialProducts);
 
   // Branch selection (admin only)
   const [selectedBranchId, setSelectedBranchId] = useState(
@@ -76,6 +79,24 @@ export default function POSInterface({
   function getStockForBranch(product) {
     const s = product.stocks.find((s) => s.branchId === selectedBranchId);
     return s ? s.quantity : 0;
+  }
+
+  // Update stok lokal setelah transaksi berhasil — tanpa re-fetch ke server
+  function deductLocalStock(soldItems, branchId) {
+    setProducts((prev) =>
+      prev.map((p) => {
+        const sold = soldItems.find((i) => i.productId === p.id);
+        if (!sold) return p;
+        return {
+          ...p,
+          stocks: p.stocks.map((s) =>
+            s.branchId === branchId
+              ? { ...s, quantity: Math.max(0, s.quantity - sold.quantity) }
+              : s
+          ),
+        };
+      })
+    );
   }
 
   // Ambil expiry info dari batch terdekat kadaluarsa untuk produk+cabang ini
@@ -313,6 +334,12 @@ export default function POSInterface({
         setCheckoutError(data.error || "Terjadi kesalahan saat checkout");
         return;
       }
+
+      // Update stok lokal langsung — tidak perlu refresh halaman
+      deductLocalStock(
+        txPayload.items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+        selectedBranchId
+      );
 
       setReceipt(data);
     } catch (e) {

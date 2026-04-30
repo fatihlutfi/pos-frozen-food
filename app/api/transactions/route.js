@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import prismaTx from "@/lib/prisma-tx";
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
 // GET /api/transactions — untuk halaman riwayat
@@ -250,6 +251,9 @@ export async function POST(req) {
         throw e;
       }
     }
+
+    // Invalidate cache POS supaya refresh halaman dapat stok terbaru
+    revalidatePath("/pos");
 
     return NextResponse.json(transaction, { status: 201 });
 
