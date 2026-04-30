@@ -45,3 +45,6 @@ next-env.d.ts
 # Prisma generated client
 node_modules/.prisma
 .env*.local
+
+# Database backups (dihasilkan oleh scripts/backup-db.sh)
+/backups
