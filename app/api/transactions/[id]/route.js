@@ -70,26 +70,27 @@ export async function PATCH(req, { params }) {
         data: { status: "VOIDED", voidReason, voidedAt: new Date() },
       });
 
-      // 2. Kembalikan stok tiap item + catat log
+      // 2. Kembalikan stok tiap item + catat log (atomic increment — aman dari race condition)
       for (const item of transaction.items) {
-        const stock = await tx.stock.findUnique({
+        // Baca qty sebelum increment untuk log
+        const stockBefore = await tx.stock.findUnique({
           where: { productId_branchId: { productId: item.productId, branchId: transaction.branchId } },
+          select: { quantity: true },
         });
 
-        if (stock) {
-          const newQty = stock.quantity + item.quantity;
-
+        if (stockBefore !== null) {
+          // Atomic increment — tidak perlu guard karena penambahan selalu valid
           await tx.stock.update({
             where: { productId_branchId: { productId: item.productId, branchId: transaction.branchId } },
-            data:  { quantity: newQty },
+            data:  { quantity: { increment: item.quantity } },
           });
 
           await tx.stockLog.create({
             data: {
               type:          "RETURN",
               change:        item.quantity,
-              noteBefore:    stock.quantity,
-              noteAfter:     newQty,
+              noteBefore:    stockBefore.quantity,
+              noteAfter:     stockBefore.quantity + item.quantity,
               note:          `Void ${transaction.invoiceNumber} — ${voidReason}`,
               productId:     item.productId,
               branchId:      transaction.branchId,

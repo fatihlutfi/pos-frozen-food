@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { formatRupiah, formatDateTime } from "@/lib/format";
 import ReceiptModal from "./ReceiptModal";
+import { useOfflineQueue } from "@/lib/useOfflineQueue";
 
 const PAYMENT_METHODS = [
   { value: "CASH", label: "Tunai", icon: "💵" },
@@ -51,6 +52,9 @@ export default function POSInterface({
 
   // Receipt
   const [receipt, setReceipt] = useState(null);
+
+  // Offline queue
+  const { isOnline, pendingCount, failedCount, syncing, enqueue, syncQueue } = useOfflineQueue();
 
   // Shift state
   const [activeShift,      setActiveShift]      = useState(initialShift);
@@ -252,32 +256,70 @@ export default function POSInterface({
     setCheckoutError("");
     setLoading(true);
 
-    const res = await fetch("/api/transactions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        items: cart.map((i) => ({
-          productId:       i.product.id,
-          quantity:        i.quantity,
-          price:           i.effectivePrice ?? i.product.price,
-          discountPercent: i.discountPct ?? 0,
-        })),
+    const txPayload = {
+      items: cart.map((i) => ({
+        productId:       i.product.id,
+        quantity:        i.quantity,
+        price:           i.effectivePrice ?? i.product.price,
+        discountPercent: i.discountPct ?? 0,
+      })),
+      paymentMethod,
+      discountAmount: discountAmt,
+      amountPaid: paymentMethod === "CASH" ? paid : grandTotal,
+      branchId: selectedBranchId,
+    };
+
+    // ── Offline: simpan ke queue, tampilkan struk sementara ──────────────
+    if (!isOnline) {
+      const offlineId = enqueue(txPayload);
+      setLoading(false);
+      // Buat struk sementara (tanpa invoice number yang valid)
+      setReceipt({
+        _offline:      true,
+        _offlineId:    offlineId,
+        invoiceNumber: `OFFLINE-${Date.now()}`,
         paymentMethod,
+        status:        "PENDING_SYNC",
+        subtotal,
         discountAmount: discountAmt,
-        amountPaid: paymentMethod === "CASH" ? paid : grandTotal,
-        branchId: selectedBranchId,
-      }),
-    });
-
-    const data = await res.json();
-    setLoading(false);
-
-    if (!res.ok) {
-      setCheckoutError(data.error || "Terjadi kesalahan saat checkout");
+        grandTotal,
+        amountPaid: txPayload.amountPaid,
+        changeAmount: change,
+        createdAt: new Date().toISOString(),
+        branch:  { name: activeBranchName },
+        user:    { name: cashierName },
+        items: cart.map((i) => ({
+          quantity: i.quantity,
+          price:    i.effectivePrice ?? i.product.price,
+          subtotal: (i.effectivePrice ?? i.product.price) * i.quantity,
+          product:  { name: i.product.name },
+        })),
+      });
       return;
     }
 
-    setReceipt(data);
+    // ── Online: proses normal ─────────────────────────────────────────────
+    try {
+      const res = await fetch("/api/transactions", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify(txPayload),
+      });
+
+      const data = await res.json();
+      setLoading(false);
+
+      if (!res.ok) {
+        setCheckoutError(data.error || "Terjadi kesalahan saat checkout");
+        return;
+      }
+
+      setReceipt(data);
+    } catch (e) {
+      // Jika fetch gagal (misal internet tiba-tiba putus saat request)
+      setLoading(false);
+      setCheckoutError("Koneksi bermasalah. Cek jaringan dan coba lagi, atau tunggu antrian offline tersinkron.");
+    }
   }
 
   // ── Render ─────────────────────────────────────────────────
@@ -287,6 +329,34 @@ export default function POSInterface({
   return (
     <>
       <div className="h-full flex flex-col">
+        {/* ── Offline Banner ── */}
+        {!isOnline && (
+          <div className="shrink-0 bg-orange-500 text-white px-4 py-2 flex items-center justify-between gap-3 text-sm font-medium">
+            <span>Offline — transaksi akan disimpan & dikirim saat koneksi kembali</span>
+            {pendingCount > 0 && (
+              <span className="bg-white text-orange-600 px-2 py-0.5 rounded-full text-xs font-bold">
+                {pendingCount} antrian
+              </span>
+            )}
+          </div>
+        )}
+        {isOnline && (pendingCount > 0 || failedCount > 0) && (
+          <div className="shrink-0 bg-blue-600 text-white px-4 py-2 flex items-center justify-between gap-3 text-sm">
+            <span>
+              {syncing
+                ? "Menyinkronkan transaksi offline..."
+                : `${pendingCount} transaksi offline menunggu sinkronisasi${failedCount > 0 ? ` · ${failedCount} gagal` : ""}`}
+            </span>
+            {!syncing && (
+              <button
+                onClick={syncQueue}
+                className="bg-white text-blue-700 px-3 py-0.5 rounded-full text-xs font-bold hover:bg-blue-50 transition cursor-pointer"
+              >
+                Sinkron Sekarang
+              </button>
+            )}
+          </div>
+        )}
         {/* ── Header POS ── */}
         <div className="shrink-0 bg-white border-b border-gray-200 px-4 sm:px-5 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">

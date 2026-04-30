@@ -76,6 +76,8 @@ model Product {
   stocks           Stock[]
   transactionItems TransactionItem[]
 
+  @@index([categoryId, isActive])
+  @@index([isActive, name])
   @@map("products")
 }
 
@@ -110,6 +112,9 @@ model StockLog {
   transaction   Transaction? @relation(fields: [transactionId], references: [id])
   user          User?        @relation(fields: [userId], references: [id])
 
+  @@index([branchId, createdAt(sort: Desc)])
+  @@index([productId, branchId, createdAt(sort: Desc)])
+  @@index([transactionId])
   @@map("stock_logs")
 }
 
@@ -137,6 +142,10 @@ model Transaction {
   shift          CashierShift?     @relation(fields: [shiftId], references: [id])
   user           User              @relation(fields: [userId], references: [id])
 
+  @@index([branchId, createdAt(sort: Desc)])
+  @@index([branchId, status, createdAt(sort: Desc)])
+  @@index([shiftId])
+  @@index([userId, createdAt(sort: Desc)])
   @@map("transactions")
 }
 
@@ -153,6 +162,8 @@ model TransactionItem {
   product         Product     @relation(fields: [productId], references: [id])
   transaction     Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
 
+  @@index([productId])
+  @@index([transactionId])
   @@map("transaction_items")
 }
 
@@ -170,6 +181,8 @@ model CashierShift {
   user           User          @relation(fields: [userId], references: [id])
   transactions   Transaction[]
 
+  @@index([branchId, status, openedAt(sort: Desc)])
+  @@index([userId, status])
   @@map("cashier_shifts")
 }
 

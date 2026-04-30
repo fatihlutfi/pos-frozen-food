@@ -175,14 +175,26 @@ export async function POST(req) {
             },
           });
 
-          // Kurangi stok + log + FIFO batch deduction
+          // Kurangi stok + log + FIFO batch deduction (atomic — no race condition)
           for (const item of items) {
-            const s      = txStocks.find((st) => st.productId === item.productId);
-            const newQty = s.quantity - item.quantity;
+            const s = txStocks.find((st) => st.productId === item.productId);
 
-            await tx.stock.update({
+            // Atomic conditional decrement — jika qty < item.quantity saat commit, count = 0 → throw
+            const stockResult = await tx.stock.updateMany({
+              where: { productId: item.productId, branchId, quantity: { gte: item.quantity } },
+              data:  { quantity: { decrement: item.quantity } },
+            });
+            if (stockResult.count === 0) {
+              throw Object.assign(
+                new Error(`Stok "${s.product.name}" habis saat proses, silakan coba lagi`),
+                { _http: 409 }
+              );
+            }
+
+            // Baca qty terbaru untuk stock log (setelah atomic update)
+            const updatedStock = await tx.stock.findUnique({
               where: { productId_branchId: { productId: item.productId, branchId } },
-              data:  { quantity: newQty },
+              select: { quantity: true },
             });
 
             await tx.stockLog.create({
@@ -190,7 +202,7 @@ export async function POST(req) {
                 type:          "SALE",
                 change:        -item.quantity,
                 noteBefore:    s.quantity,
-                noteAfter:     newQty,
+                noteAfter:     updatedStock.quantity,
                 note:          `Penjualan ${invoiceNumber}`,
                 productId:     item.productId,
                 branchId,
@@ -199,7 +211,7 @@ export async function POST(req) {
               },
             });
 
-            // FIFO batch deduction — batch dengan expiry paling dekat dikurangi duluan
+            // FIFO batch deduction — batch dengan expiry paling dekat dikurangi duluan (atomic per batch)
             const batches = await tx.productBatch.findMany({
               where:   { productId: item.productId, branchId, isActive: true, quantity: { gt: 0 } },
               orderBy: { expiryDate: "asc" },
@@ -209,9 +221,10 @@ export async function POST(req) {
             for (const batch of batches) {
               if (remaining <= 0) break;
               const deduct = Math.min(batch.quantity, remaining);
-              await tx.productBatch.update({
-                where: { id: batch.id },
-                data:  { quantity: batch.quantity - deduct },
+              // Atomic conditional decrement per batch
+              await tx.productBatch.updateMany({
+                where: { id: batch.id, quantity: { gte: deduct } },
+                data:  { quantity: { decrement: deduct } },
               });
               remaining -= deduct;
             }
