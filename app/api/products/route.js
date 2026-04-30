@@ -46,16 +46,11 @@ export async function POST(req) {
   }
 
   try {
-    const { name, description, price, costPrice, categoryId, storageZone } = await req.json();
+    const { name, description, price, costPrice, categoryId } = await req.json();
 
     if (!name?.trim()) return NextResponse.json({ error: "Nama produk wajib diisi" }, { status: 400 });
     if (!price || price <= 0) return NextResponse.json({ error: "Harga jual tidak valid" }, { status: 400 });
     if (!categoryId) return NextResponse.json({ error: "Kategori wajib dipilih" }, { status: 400 });
-
-    const VALID_ZONES = ["FROZEN", "CHILLED", "AMBIENT", "DISPLAY_ONLY"];
-    if (!storageZone || !VALID_ZONES.includes(storageZone)) {
-      return NextResponse.json({ error: "Storage zone wajib dipilih" }, { status: 400 });
-    }
 
     // Cek kategori exist
     const category = await prisma.category.findUnique({ where: { id: categoryId } });
@@ -71,7 +66,6 @@ export async function POST(req) {
         price:       parseInt(price),
         costPrice:   parseInt(costPrice) || 0,
         categoryId,
-        storageZone,
         stocks: {
           create: branches.map((b) => ({
             branchId: b.id,

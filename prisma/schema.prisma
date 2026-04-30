@@ -67,7 +67,6 @@ model Product {
   updatedAt        DateTime              @updatedAt
   categoryId       String
   costPrice        Int                   @default(0)
-  storageZone      StorageZone           @default(FROZEN)
   batches          ProductBatch[]
   discountRules    ProductDiscountRule[]
   category         Category              @relation(fields: [categoryId], references: [id])
@@ -283,9 +282,3 @@ enum StockOpnameStatus {
   CONFIRMED
 }
 
-enum StorageZone {
-  FROZEN
-  CHILLED
-  AMBIENT
-  DISPLAY_ONLY
-}

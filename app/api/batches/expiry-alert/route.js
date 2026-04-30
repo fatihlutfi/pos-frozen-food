@@ -27,7 +27,7 @@ export async function GET(req) {
         ...(branchId ? { branchId } : {}),
       },
       include: {
-        product: { select: { id: true, name: true, storageZone: true } },
+        product: { select: { id: true, name: true } },
         branch:  { select: { id: true, name: true } },
       },
       orderBy: { expiryDate: "asc" },

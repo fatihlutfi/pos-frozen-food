@@ -37,7 +37,7 @@ export async function GET(req) {
         ...(!includeExpired ? { expiryDate: { gte: new Date() } } : {}),
       },
       include: {
-        product: { select: { id: true, name: true, storageZone: true } },
+        product: { select: { id: true, name: true } },
         branch:  { select: { id: true, name: true } },
       },
       orderBy: { expiryDate: "asc" },
@@ -97,7 +97,7 @@ export async function POST(req) {
       },
     });
 
-    // Tambah ke stok aggregate (atomic increment)
+    // Baca stok sebelum increment untuk noteBefore yang akurat (atomic increment)
     await prisma.stock.updateMany({
       where: { productId, branchId },
       data: { quantity: { increment: qty } },

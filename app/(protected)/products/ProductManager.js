@@ -5,24 +5,7 @@ import { useRouter } from "next/navigation";
 import Modal from "@/components/Modal";
 import { formatRupiah } from "@/lib/format";
 
-const EMPTY_FORM = { name: "", description: "", price: "", costPrice: "", categoryId: "", storageZone: "FROZEN" };
-
-const ZONE_CONFIG = {
-  FROZEN:       { label: "Frozen",       color: "bg-blue-100 text-blue-700",   dot: "bg-blue-500"  },
-  CHILLED:      { label: "Chilled",      color: "bg-cyan-100 text-cyan-700",   dot: "bg-cyan-500"  },
-  AMBIENT:      { label: "Ambient",      color: "bg-gray-100 text-gray-600",   dot: "bg-gray-400"  },
-  DISPLAY_ONLY: { label: "Display Only", color: "bg-yellow-100 text-yellow-700", dot: "bg-yellow-500" },
-};
-
-function ZoneBadge({ zone }) {
-  const cfg = ZONE_CONFIG[zone] || ZONE_CONFIG.FROZEN;
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cfg.color}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
-      {cfg.label}
-    </span>
-  );
-}
+const EMPTY_FORM = { name: "", description: "", price: "", costPrice: "", categoryId: "" };
 
 export default function ProductManager({
   initialProducts, categories, branches, isAdmin, currentBranchId,
@@ -31,7 +14,6 @@ export default function ProductManager({
   const [products, setProducts] = useState(initialProducts);
   const [search, setSearch] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
-  const [filterZone, setFilterZone] = useState("");
   const [modal, setModal] = useState({ open: false, mode: "add", product: null });
   const [stockModal, setStockModal] = useState({ open: false, product: null });
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -59,10 +41,9 @@ export default function ProductManager({
     return products.filter((p) => {
       const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
       const matchCat  = filterCategory ? p.categoryId === filterCategory : true;
-      const matchZone = filterZone ? p.storageZone === filterZone : true;
-      return matchSearch && matchCat && matchZone;
+      return matchSearch && matchCat;
     });
-  }, [products, search, filterCategory, filterZone]);
+  }, [products, search, filterCategory]);
 
   function openAdd() {
     setForm(EMPTY_FORM);
@@ -77,7 +58,6 @@ export default function ProductManager({
       price:       product.price,
       costPrice:   product.costPrice ?? 0,
       categoryId:  product.categoryId,
-      storageZone: product.storageZone || "FROZEN",
     });
     setError("");
     setModal({ open: true, mode: "edit", product });
@@ -374,16 +354,6 @@ export default function ProductManager({
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
-        <select
-          value={filterZone}
-          onChange={(e) => setFilterZone(e.target.value)}
-          className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-        >
-          <option value="">Semua Zone</option>
-          {Object.entries(ZONE_CONFIG).map(([val, cfg]) => (
-            <option key={val} value={val}>{cfg.label}</option>
-          ))}
-        </select>
         {isAdmin && (
           <button
             onClick={openAdd}
@@ -405,7 +375,6 @@ export default function ProductManager({
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left px-5 py-3 font-medium text-gray-600">Produk</th>
-                <th className="text-left px-5 py-3 font-medium text-gray-600">Zone</th>
                 <th className="text-left px-5 py-3 font-medium text-gray-600">Kategori</th>
                 <th className="text-right px-5 py-3 font-medium text-gray-600">Harga Jual</th>
                 {isAdmin && <th className="text-right px-5 py-3 font-medium text-gray-600">HPP</th>}
@@ -452,9 +421,6 @@ export default function ProductManager({
                           </div>
                         );
                       })()}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <ZoneBadge zone={product.storageZone || "FROZEN"} />
                     </td>
                     <td className="px-5 py-3.5">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
@@ -576,22 +542,6 @@ export default function ProductManager({
               <option value="">-- Pilih Kategori --</option>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Storage Zone <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={form.storageZone}
-              onChange={(e) => setForm({ ...form, storageZone: e.target.value })}
-              required
-              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-            >
-              {Object.entries(ZONE_CONFIG).map(([val, cfg]) => (
-                <option key={val} value={val}>{cfg.label}</option>
               ))}
             </select>
           </div>
