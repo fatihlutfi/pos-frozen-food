@@ -39,6 +39,40 @@ export async function GET(req, { params }) {
   return NextResponse.json(opname);
 }
 
+// DELETE /api/stock-opname/[id] — hapus draft opname (hanya status DRAFT)
+export async function DELETE(req, { params }) {
+  const session = await getServerSession(authOptions);
+  if (!session || session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Tidak diizinkan" }, { status: 403 });
+  }
+
+  const { id } = await params;
+
+  try {
+    const opname = await prisma.stockOpname.findUnique({
+      where:  { id },
+      select: { status: true },
+    });
+
+    if (!opname) {
+      return NextResponse.json({ error: "Sesi opname tidak ditemukan" }, { status: 404 });
+    }
+    if (opname.status !== "DRAFT") {
+      return NextResponse.json(
+        { error: "Hanya opname berstatus Draft yang dapat dihapus" },
+        { status: 400 }
+      );
+    }
+
+    // Items akan terhapus otomatis via onDelete: Cascade di schema
+    await prisma.stockOpname.delete({ where: { id } });
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    console.error("[DELETE /api/stock-opname/[id]]", e);
+    return NextResponse.json({ error: "Gagal menghapus opname" }, { status: 500 });
+  }
+}
+
 // PATCH /api/stock-opname/[id] — update physicalQty item-item
 // Body: { items: [{ id, physicalQty }] }  — hanya update item yang dikirim
 export async function PATCH(req, { params }) {

@@ -260,6 +260,8 @@ export default function ReportView({ isAdmin, branches, defaultBranchId, default
       const data = await res.json();
       setReport(data);
       setHasLoaded(true);
+      setShowMoreTop(false);
+      setShowMoreBottom(false);
       setAppliedFrom(params.dateFrom || "");
       setAppliedTo(params.dateTo || "");
       setAppliedBranch(params.branchId || "");
@@ -303,6 +305,10 @@ export default function ReportView({ isAdmin, branches, defaultBranchId, default
     if (!report?.transactionList) return [];
     return sortRows(report.transactionList, sortKey, sortDir);
   }, [report, sortKey, sortDir]);
+
+  // "Lihat Lebih Banyak" untuk analisis produk
+  const [showMoreTop,    setShowMoreTop]    = useState(false);
+  const [showMoreBottom, setShowMoreBottom] = useState(false);
 
   return (
     <>
@@ -561,69 +567,33 @@ export default function ReportView({ isAdmin, branches, defaultBranchId, default
               </div>
             </div>
 
-            {/* ── Metode Pembayaran + Produk Terlaris ── */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Metode Pembayaran */}
-              <div className="print-card bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="px-5 py-3 border-b border-gray-100">
-                  <h3 className="font-semibold text-gray-800 text-sm">Metode Pembayaran</h3>
-                </div>
-                <div className="p-5 space-y-4">
-                  {Object.entries(report.byPaymentMethod).map(([method, data]) => {
-                    const pct = report.summary.totalRevenue > 0
-                      ? Math.round((data.revenue / report.summary.totalRevenue) * 100) : 0;
-                    return (
-                      <div key={method}>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${METHOD_COLOR[method]}`}>
-                            {METHOD_LABEL[method]}
-                          </span>
-                          <div className="text-right text-sm">
-                            <span className="font-semibold text-gray-900">{formatRupiah(data.revenue)}</span>
-                            <span className="text-gray-400 text-xs ml-2">{data.count} transaksi · {pct}%</span>
-                          </div>
-                        </div>
-                        <div className="w-full bg-gray-100 rounded-full h-2.5">
-                          <div className={`h-2.5 rounded-full transition-all ${METHOD_BAR_COLOR[method]}`}
-                            style={{ width: `${pct}%` }} />
+            {/* ── Metode Pembayaran ── */}
+            <div className="print-card bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-100">
+                <h3 className="font-semibold text-gray-800 text-sm">Metode Pembayaran</h3>
+              </div>
+              <div className="p-5 space-y-4">
+                {Object.entries(report.byPaymentMethod).map(([method, data]) => {
+                  const pct = report.summary.totalRevenue > 0
+                    ? Math.round((data.revenue / report.summary.totalRevenue) * 100) : 0;
+                  return (
+                    <div key={method}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${METHOD_COLOR[method]}`}>
+                          {METHOD_LABEL[method]}
+                        </span>
+                        <div className="text-right text-sm">
+                          <span className="font-semibold text-gray-900">{formatRupiah(data.revenue)}</span>
+                          <span className="text-gray-400 text-xs ml-2">{data.count} transaksi · {pct}%</span>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Produk Terlaris */}
-              <div className="print-card bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="px-5 py-3 border-b border-gray-100">
-                  <h3 className="font-semibold text-gray-800 text-sm">10 Produk Terlaris</h3>
-                </div>
-                {report.topProducts.length === 0 ? (
-                  <div className="py-10 text-center text-gray-400 text-sm">Belum ada data</div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="text-left px-4 py-2.5 text-gray-600 font-medium text-xs">#</th>
-                          <th className="text-left px-4 py-2.5 text-gray-600 font-medium text-xs">Produk</th>
-                          <th className="text-right px-4 py-2.5 text-gray-600 font-medium text-xs">Qty</th>
-                          <th className="text-right px-4 py-2.5 text-gray-600 font-medium text-xs">Pendapatan</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {report.topProducts.map((p, i) => (
-                          <tr key={p.name} className="hover:bg-gray-50">
-                            <td className="px-4 py-2.5 text-gray-400 text-xs">{i + 1}</td>
-                            <td className="px-4 py-2.5 text-gray-800 font-medium">{p.name}</td>
-                            <td className="px-4 py-2.5 text-right text-gray-600">{p.qty}</td>
-                            <td className="px-4 py-2.5 text-right font-semibold text-gray-900">{formatRupiah(p.revenue)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                      <div className="w-full bg-gray-100 rounded-full h-2.5">
+                        <div className={`h-2.5 rounded-full transition-all ${METHOD_BAR_COLOR[method]}`}
+                          style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -689,7 +659,7 @@ export default function ReportView({ isAdmin, branches, defaultBranchId, default
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-                  {/* 1. Produk Terlaris (top 5 by qty) */}
+                  {/* 1. Produk Terlaris (top by qty) */}
                   <div className="print-card bg-white rounded-xl border border-gray-200 overflow-hidden">
                     <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
                       <span className="text-base">🏆</span>
@@ -699,51 +669,65 @@ export default function ReportView({ isAdmin, branches, defaultBranchId, default
                     {report.productAnalysis.topByQty.length === 0 ? (
                       <div className="py-10 text-center text-gray-400 text-sm">Belum ada penjualan dalam periode ini</div>
                     ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead className="bg-gray-50">
-                            <tr>
-                              <th className="text-left px-4 py-2.5 text-gray-500 font-medium text-xs">#</th>
-                              <th className="text-left px-4 py-2.5 text-gray-500 font-medium text-xs">Produk</th>
-                              <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Qty Terjual</th>
-                              <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Pendapatan</th>
-                              {report.periodInfo && (
-                                <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Tren</th>
-                              )}
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100">
-                            {report.productAnalysis.topByQty.map((p, i) => {
-                              const maxQty = report.productAnalysis.topByQty[0]?.qty || 1;
-                              const barPct = Math.round((p.qty / maxQty) * 100);
-                              return (
-                                <tr key={p.name} className="hover:bg-gray-50">
-                                  <td className="px-4 py-3 text-xs font-bold text-amber-500">{i + 1}</td>
-                                  <td className="px-4 py-3">
-                                    <p className="font-medium text-gray-800 text-sm">{p.name}</p>
-                                    <div className="mt-1 w-full bg-gray-100 rounded-full h-1.5">
-                                      <div className="bg-amber-400 h-1.5 rounded-full" style={{ width: `${barPct}%` }} />
-                                    </div>
-                                  </td>
-                                  <td className="px-4 py-3 text-right font-bold text-gray-900">{p.qty}</td>
-                                  <td className="px-4 py-3 text-right font-semibold text-green-600 whitespace-nowrap text-xs">
-                                    {formatRupiah(p.revenue)}
-                                  </td>
-                                  {report.periodInfo && (
-                                    <td className="px-4 py-3 text-right">
-                                      <TrendBadge trend={p.trend} />
+                      <>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="text-left px-4 py-2.5 text-gray-500 font-medium text-xs">#</th>
+                                <th className="text-left px-4 py-2.5 text-gray-500 font-medium text-xs">Produk</th>
+                                <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Qty Terjual</th>
+                                <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Pendapatan</th>
+                                {report.periodInfo && (
+                                  <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Tren</th>
+                                )}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {report.productAnalysis.topByQty.slice(0, showMoreTop ? 15 : 5).map((p, i) => {
+                                const maxQty = report.productAnalysis.topByQty[0]?.qty || 1;
+                                const barPct = Math.round((p.qty / maxQty) * 100);
+                                return (
+                                  <tr key={p.name} className="hover:bg-gray-50">
+                                    <td className="px-4 py-3 text-xs font-bold text-amber-500">{i + 1}</td>
+                                    <td className="px-4 py-3">
+                                      <p className="font-medium text-gray-800 text-sm">{p.name}</p>
+                                      <div className="mt-1 w-full bg-gray-100 rounded-full h-1.5">
+                                        <div className="bg-amber-400 h-1.5 rounded-full" style={{ width: `${barPct}%` }} />
+                                      </div>
                                     </td>
-                                  )}
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
+                                    <td className="px-4 py-3 text-right font-bold text-gray-900">{p.qty}</td>
+                                    <td className="px-4 py-3 text-right font-semibold text-green-600 whitespace-nowrap text-xs">
+                                      {formatRupiah(p.revenue)}
+                                    </td>
+                                    {report.periodInfo && (
+                                      <td className="px-4 py-3 text-right">
+                                        <TrendBadge trend={p.trend} />
+                                      </td>
+                                    )}
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                        {report.productAnalysis.topByQty.length > 5 && (
+                          <div className="px-5 py-3 border-t border-gray-100 no-print">
+                            <button
+                              onClick={() => setShowMoreTop((v) => !v)}
+                              className="text-xs font-medium text-blue-600 hover:text-blue-800 transition cursor-pointer"
+                            >
+                              {showMoreTop
+                                ? "Tampilkan lebih sedikit"
+                                : `Lihat Lebih Banyak (${Math.min(15, report.productAnalysis.topByQty.length)} dari ${report.productAnalysis.topByQty.length})`}
+                            </button>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
 
-                  {/* 2. Produk Tidak Laris (bottom 5 by qty) */}
+                  {/* 2. Produk Tidak Laris (bottom by qty) */}
                   <div className="print-card bg-white rounded-xl border border-gray-200 overflow-hidden">
                     <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
                       <span className="text-base">📉</span>
@@ -753,45 +737,59 @@ export default function ReportView({ isAdmin, branches, defaultBranchId, default
                     {report.productAnalysis.bottomByQty.length === 0 ? (
                       <div className="py-10 text-center text-gray-400 text-sm">Belum ada penjualan dalam periode ini</div>
                     ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead className="bg-gray-50">
-                            <tr>
-                              <th className="text-left px-4 py-2.5 text-gray-500 font-medium text-xs">Produk</th>
-                              <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Qty Terjual</th>
-                              {report.periodInfo && (
-                                <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Tren</th>
-                              )}
-                              <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Stok Saat Ini</th>
-                              <th className="px-4 py-2.5 text-gray-500 font-medium text-xs">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100">
-                            {report.productAnalysis.bottomByQty.map((p) => (
-                              <tr key={p.name} className="hover:bg-gray-50">
-                                <td className="px-4 py-3">
-                                  <p className="font-medium text-gray-800 text-sm">{p.name}</p>
-                                  <p className="text-xs text-gray-400">{formatRupiah(p.revenue)}</p>
-                                </td>
-                                <td className="px-4 py-3 text-right font-bold text-gray-700">{p.qty}</td>
+                      <>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="text-left px-4 py-2.5 text-gray-500 font-medium text-xs">Produk</th>
+                                <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Qty Terjual</th>
                                 {report.periodInfo && (
-                                  <td className="px-4 py-3 text-right">
-                                    <TrendBadge trend={p.trend} />
-                                  </td>
+                                  <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Tren</th>
                                 )}
-                                <td className="px-4 py-3 text-right text-gray-600">{p.currentStock}</td>
-                                <td className="px-4 py-3">
-                                  {p.needsPromo && (
-                                    <span className="inline-block bg-orange-100 text-orange-700 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">
-                                      Perlu Promo
-                                    </span>
-                                  )}
-                                </td>
+                                <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Stok Saat Ini</th>
+                                <th className="px-4 py-2.5 text-gray-500 font-medium text-xs">Status</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {report.productAnalysis.bottomByQty.slice(0, showMoreBottom ? 15 : 5).map((p) => (
+                                <tr key={p.name} className="hover:bg-gray-50">
+                                  <td className="px-4 py-3">
+                                    <p className="font-medium text-gray-800 text-sm">{p.name}</p>
+                                    <p className="text-xs text-gray-400">{formatRupiah(p.revenue)}</p>
+                                  </td>
+                                  <td className="px-4 py-3 text-right font-bold text-gray-700">{p.qty}</td>
+                                  {report.periodInfo && (
+                                    <td className="px-4 py-3 text-right">
+                                      <TrendBadge trend={p.trend} />
+                                    </td>
+                                  )}
+                                  <td className="px-4 py-3 text-right text-gray-600">{p.currentStock}</td>
+                                  <td className="px-4 py-3">
+                                    {p.needsPromo && (
+                                      <span className="inline-block bg-orange-100 text-orange-700 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">
+                                        Perlu Promo
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        {report.productAnalysis.bottomByQty.length > 5 && (
+                          <div className="px-5 py-3 border-t border-gray-100 no-print">
+                            <button
+                              onClick={() => setShowMoreBottom((v) => !v)}
+                              className="text-xs font-medium text-blue-600 hover:text-blue-800 transition cursor-pointer"
+                            >
+                              {showMoreBottom
+                                ? "Tampilkan lebih sedikit"
+                                : `Lihat Lebih Banyak (${Math.min(15, report.productAnalysis.bottomByQty.length)} dari ${report.productAnalysis.bottomByQty.length})`}
+                            </button>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

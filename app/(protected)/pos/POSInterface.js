@@ -58,8 +58,6 @@ export default function POSInterface({
 
   // Checkout state
   const [paymentMethod, setPaymentMethod] = useState("CASH");
-  const [discount, setDiscount] = useState("");
-  const [discountMode, setDiscountMode] = useState("nominal"); // "nominal" | "percent"
   const [amountPaid, setAmountPaid] = useState("");
   const [loading, setLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
@@ -238,8 +236,6 @@ export default function POSInterface({
 
   function clearCart() {
     setCart([]);
-    setDiscount("");
-    setDiscountMode("nominal");
     setAmountPaid("");
     setCheckoutError("");
     setPaymentMethod("CASH");
@@ -310,11 +306,8 @@ export default function POSInterface({
 
   // ── Kalkulasi ──────────────────────────────────────────────
 
-  const subtotal = cart.reduce((sum, i) => sum + (i.effectivePrice ?? i.product.price) * i.quantity, 0);
-  const discountAmt = discountMode === "percent"
-    ? Math.min(Math.round(subtotal * (parseFloat(discount) || 0) / 100), subtotal)
-    : Math.min(parseInt(discount) || 0, subtotal);
-  const grandTotal = subtotal - discountAmt;
+  const subtotal   = cart.reduce((sum, i) => sum + (i.effectivePrice ?? i.product.price) * i.quantity, 0);
+  const grandTotal = subtotal;
   // amountPaid disimpan sebagai string angka murni (tanpa titik)
   const paid = parseInt(amountPaid) || 0;
   const change = paymentMethod === "CASH" ? Math.max(0, paid - grandTotal) : 0;
@@ -337,7 +330,7 @@ export default function POSInterface({
         discountPercent: i.discountPct ?? 0,
       })),
       paymentMethod,
-      discountAmount: discountAmt,
+      discountAmount: 0,
       amountPaid: paymentMethod === "CASH" ? paid : grandTotal,
       branchId: selectedBranchId,
     };
@@ -731,48 +724,9 @@ export default function POSInterface({
             {/* ── Panel Checkout ── */}
             <div className="shrink-0 border-t border-gray-200 p-4 space-y-3 bg-gray-50">
 
-              {/* Diskon */}
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-gray-500 shrink-0">Diskon</label>
-                {/* Toggle Rp / % */}
-                <div className="flex rounded-lg border border-gray-300 overflow-hidden text-xs font-medium shrink-0">
-                  <button
-                    onClick={() => { setDiscountMode("nominal"); setDiscount(""); }}
-                    className={`px-2.5 py-1.5 cursor-pointer transition ${discountMode === "nominal" ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
-                  >Rp</button>
-                  <button
-                    onClick={() => { setDiscountMode("percent"); setDiscount(""); }}
-                    className={`px-2.5 py-1.5 cursor-pointer transition ${discountMode === "percent" ? "bg-blue-600 text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
-                  >%</button>
-                </div>
-                <input
-                  type="number"
-                  min="0"
-                  max={discountMode === "percent" ? 100 : undefined}
-                  value={discount}
-                  onChange={(e) => setDiscount(e.target.value)}
-                  placeholder={discountMode === "percent" ? "0–100" : "0"}
-                  className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>
-              {/* Preview diskon jika persen */}
-              {discountMode === "percent" && discountAmt > 0 && (
-                <p className="text-xs text-orange-500 text-right -mt-1">
-                  = {formatRupiah(discountAmt)}
-                </p>
-              )}
-
               {/* Ringkasan */}
-              <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-1.5">
-                <div className="flex justify-between text-sm text-gray-600">
-                  <span>Subtotal</span><span>{formatRupiah(subtotal)}</span>
-                </div>
-                {discountAmt > 0 && (
-                  <div className="flex justify-between text-sm text-red-500">
-                    <span>Diskon</span><span>− {formatRupiah(discountAmt)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between font-bold text-base border-t border-gray-100 pt-1.5 mt-1">
+              <div className="bg-white rounded-xl border border-gray-200 p-3">
+                <div className="flex justify-between font-bold text-base">
                   <span>Total</span><span className="text-blue-600">{formatRupiah(grandTotal)}</span>
                 </div>
               </div>

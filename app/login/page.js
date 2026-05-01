@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useState } from "react";
-import { signIn } from "next-auth/react";
+import { Suspense, useState, useEffect } from "react";
+import { signIn, signOut } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 export default function LoginPage() {
@@ -16,11 +16,23 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+  const urlError = searchParams.get("error");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(
+    urlError === "INACTIVE_BRANCH"
+      ? "Cabang Anda sedang tidak aktif. Hubungi administrator."
+      : ""
+  );
   const [loading, setLoading] = useState(false);
+
+  // Bersihkan sesi lama saat redirect paksa karena cabang nonaktif
+  useEffect(() => {
+    if (urlError === "INACTIVE_BRANCH") {
+      signOut({ redirect: false });
+    }
+  }, [urlError]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -34,6 +46,11 @@ function LoginForm() {
     });
 
     setLoading(false);
+
+    if (result?.error === "INACTIVE_BRANCH") {
+      setError("Cabang Anda sedang tidak aktif. Hubungi administrator.");
+      return;
+    }
 
     if (result?.error) {
       setError("Email atau password salah. Silakan coba lagi.");

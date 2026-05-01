@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { TrendingUp, ClipboardList } from "lucide-react";
 
@@ -27,8 +28,42 @@ const navKasir = [
 ];
 
 export default function Sidebar({ role, userName, branchName, isOpen, onClose }) {
-  const pathname = usePathname();
-  const navItems = role === "ADMIN" ? navAdmin : navKasir;
+  const pathname  = usePathname();
+  const router    = useRouter();
+  const navItems  = role === "ADMIN" ? navAdmin : navKasir;
+
+  const [showShiftModal, setShowShiftModal] = useState(false);
+  const [checkingShift,  setCheckingShift]  = useState(false);
+
+  async function handleLogout() {
+    // Admin: langsung keluar
+    if (role === "ADMIN") {
+      signOut({ callbackUrl: "/login" });
+      return;
+    }
+
+    // Kasir: cek shift aktif sebelum keluar
+    setCheckingShift(true);
+    try {
+      const res  = await fetch("/api/shifts?status=OPEN&limit=1");
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        setShowShiftModal(true);
+        return;
+      }
+    } catch {
+      // Jika cek gagal, izinkan keluar
+    } finally {
+      setCheckingShift(false);
+    }
+    signOut({ callbackUrl: "/login" });
+  }
+
+  function goToShifts() {
+    setShowShiftModal(false);
+    onClose?.();
+    router.push("/shifts");
+  }
 
   return (
     <>
@@ -116,14 +151,60 @@ export default function Sidebar({ role, userName, branchName, isOpen, onClose })
         {/* Logout */}
         <div className="px-3 py-4 border-t border-slate-700">
           <button
-            onClick={() => signOut({ callbackUrl: "/login" })}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-red-600/20 hover:text-red-400 transition-colors cursor-pointer"
+            onClick={handleLogout}
+            disabled={checkingShift}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-red-600/20 hover:text-red-400 transition-colors cursor-pointer disabled:opacity-60"
           >
-            <span className="text-base w-5 text-center">⎋</span>
+            <span className="text-base w-5 text-center">
+              {checkingShift ? (
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : "⎋"}
+            </span>
             Keluar
           </button>
         </div>
       </aside>
+
+      {/* Modal: shift aktif saat logout */}
+      {showShiftModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-3xl">⚠️</span>
+              <h3 className="text-base font-bold text-gray-800">Shift Masih Aktif</h3>
+            </div>
+            <p className="text-sm text-gray-600 mb-6">
+              Anda masih memiliki shift yang sedang berjalan. Tutup shift terlebih dahulu sebelum keluar agar catatan kasir tersimpan dengan benar.
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={goToShifts}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-sm transition cursor-pointer"
+              >
+                Tutup Shift Sekarang
+              </button>
+              <button
+                onClick={() => {
+                  setShowShiftModal(false);
+                  signOut({ callbackUrl: "/login" });
+                }}
+                className="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-600 font-semibold rounded-lg text-sm transition cursor-pointer"
+              >
+                Keluar Tanpa Menutup Shift
+              </button>
+              <button
+                onClick={() => setShowShiftModal(false)}
+                className="w-full py-2.5 text-gray-500 hover:text-gray-700 text-sm transition cursor-pointer"
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -30,7 +30,7 @@ const STATUS_STYLE = {
 
 // ── Component ──────────────────────────────────────────────────────────────
 
-export default function OpnameDetail({ opname: initialOpname }) {
+export default function OpnameDetail({ opname: initialOpname, autoSyncedCount = 0 }) {
   const router = useRouter();
   const isConfirmed = initialOpname.status === "CONFIRMED";
 
@@ -50,6 +50,9 @@ export default function OpnameDetail({ opname: initialOpname }) {
   const [confirming,   setConfirming]   = useState(false);
   const [confirmError, setConfirmError] = useState("");
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showDeleteModal,  setShowDeleteModal]  = useState(false);
+  const [deleting,         setDeleting]         = useState(false);
+  const [deleteError,      setDeleteError]      = useState("");
 
   // ── Computed summary ─────────────────────────────────────────────────────
 
@@ -152,6 +155,25 @@ export default function OpnameDetail({ opname: initialOpname }) {
     }
   }
 
+  async function handleDelete() {
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      const res = await fetch(`/api/stock-opname/${initialOpname.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const d = await res.json();
+        setDeleteError(d.error || "Gagal menghapus opname");
+        return;
+      }
+      router.push("/stock-opname");
+      router.refresh();
+    } catch (e) {
+      setDeleteError("Terjadi kesalahan: " + e.message);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   const shortId = initialOpname.id.slice(-8).toUpperCase();
@@ -194,7 +216,27 @@ export default function OpnameDetail({ opname: initialOpname }) {
             </p>
           )}
         </div>
+
+        {/* Hapus Draft — hanya saat status DRAFT */}
+        {!isConfirmed && (
+          <button
+            onClick={() => { setShowDeleteModal(true); setDeleteError(""); }}
+            className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-sm font-medium border border-red-200 transition cursor-pointer shrink-0"
+          >
+            Hapus Draft
+          </button>
+        )}
       </div>
+
+      {/* Banner: auto-sync */}
+      {autoSyncedCount > 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 flex items-start gap-3">
+          <span className="text-yellow-500 text-lg shrink-0">⚠️</span>
+          <p className="text-sm text-yellow-800">
+            <strong>{autoSyncedCount} produk baru</strong> telah ditambahkan ke draft ini karena terdaftar di sistem setelah opname dibuat. Silakan isi stok fisik produk tersebut.
+          </p>
+        </div>
+      )}
 
       {/* Summary bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -368,6 +410,43 @@ export default function OpnameDetail({ opname: initialOpname }) {
               {saveMsg.replace("error:", "")}
             </p>
           )}
+        </div>
+      )}
+
+      {/* Modal: Hapus Draft */}
+      {showDeleteModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+          onClick={(e) => { if (e.target === e.currentTarget && !deleting) setShowDeleteModal(false); }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="text-center">
+              <span className="text-4xl">🗑️</span>
+              <h2 className="text-lg font-semibold text-gray-900 mt-2">Hapus Draft Opname?</h2>
+            </div>
+            <p className="text-sm text-gray-600 text-center">
+              Sesi opname <strong>#{shortId}</strong> beserta semua data yang sudah diisi akan dihapus permanen. Tindakan ini <strong>tidak dapat dibatalkan</strong>.
+            </p>
+            {deleteError && (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{deleteError}</p>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => { if (!deleting) setShowDeleteModal(false); }}
+                disabled={deleting}
+                className="flex-1 py-2.5 border border-gray-300 text-gray-600 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50 transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition cursor-pointer"
+              >
+                {deleting ? "Menghapus..." : "Ya, Hapus Draft"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
