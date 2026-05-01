@@ -8,6 +8,25 @@ export const metadata = { title: "Dashboard — POS Frozen Food" };
 
 const LOW_STOCK_THRESHOLD = 20;
 
+// ── WIB (UTC+7) timezone helpers ──────────────────────────────────────────
+const WIB_MS = 7 * 60 * 60 * 1000;
+
+/** Hitung selisih hari berdasarkan batas hari WIB */
+function diffDaysWIB(expiryDate) {
+  const nowWIB     = new Date(Date.now() + WIB_MS);
+  const todayDayMs = Date.UTC(nowWIB.getUTCFullYear(), nowWIB.getUTCMonth(), nowWIB.getUTCDate());
+  const expWIB     = new Date(new Date(expiryDate).getTime() + WIB_MS);
+  const expDayMs   = Date.UTC(expWIB.getUTCFullYear(), expWIB.getUTCMonth(), expWIB.getUTCDate());
+  return Math.ceil((expDayMs - todayDayMs) / 86400000);
+}
+
+/** Start of today in WIB as UTC Date — untuk filter Prisma endDate >= hari ini WIB */
+function startOfTodayWIB() {
+  const nowWIB = new Date(Date.now() + WIB_MS);
+  const midnightWIBAsUTC = Date.UTC(nowWIB.getUTCFullYear(), nowWIB.getUTCMonth(), nowWIB.getUTCDate()) - WIB_MS;
+  return new Date(midnightWIBAsUTC);
+}
+
 async function getDashboardStats(session) {
   const today    = startOfToday();
   const isAdmin  = session.user.role === "ADMIN";
@@ -102,12 +121,12 @@ async function getDashboardStats(session) {
         ])
       : Promise.resolve(null),
 
-    // Bundling aktif hari ini — fail-safe jika tabel belum ada
+    // Bundling aktif hari ini (WIB) — fail-safe jika tabel belum ada
     prisma.bundle.findMany({
       where: {
         isActive: true,
         OR: [{ startDate: null }, { startDate: { lte: new Date() } }],
-        AND: [{ OR: [{ endDate: null }, { endDate: { gte: new Date() } }] }],
+        AND: [{ OR: [{ endDate: null }, { endDate: { gte: startOfTodayWIB() } }] }],
         ...(isAdmin ? {} : {
           OR: [{ branchId: session.user.branchId }, { branchId: null }],
         }),
@@ -149,9 +168,9 @@ async function getDashboardStats(session) {
       : 0;
   }
 
-  // Batch dengan auto-discount expiry (critical/warning)
+  // Batch dengan auto-discount expiry — hitung pakai batas hari WIB
   const expiryPromoCount = expiryBatches.filter((b) => {
-    const d = Math.ceil((new Date(b.expiryDate) - new Date()) / 86400000);
+    const d = diffDaysWIB(b.expiryDate);
     return d >= 0 && d < 30;
   }).length;
 
@@ -353,7 +372,7 @@ export default async function DashboardPage() {
           </div>
           <div className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
             {stats.expiryBatches.map((b) => {
-              const diffDays = Math.ceil((new Date(b.expiryDate) - new Date()) / 86400000);
+              const diffDays = diffDaysWIB(b.expiryDate); // WIB-aware
               const { label, color } = diffDays < 0
                 ? { label: "Expired",      color: "bg-black text-white"         }
                 : diffDays < 7
@@ -361,11 +380,14 @@ export default async function DashboardPage() {
                 : diffDays < 30
                 ? { label: "Segera Habis", color: "bg-orange-500 text-white"    }
                 : { label: "Segera Promo", color: "bg-yellow-400 text-gray-900" };
+              const expDateWIB = new Date(b.expiryDate).toLocaleDateString("id-ID", {
+                timeZone: "Asia/Jakarta", day: "numeric", month: "short", year: "numeric",
+              });
               return (
                 <div key={b.id} className="flex items-center justify-between px-5 py-3 gap-3">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-gray-800 truncate">{b.product.name}</p>
-                    <p className="text-xs text-gray-400">{b.branch.name} · Batch: {b.batchCode}</p>
+                    <p className="text-xs text-gray-400">{b.branch.name} · {b.batchCode} · Exp: {expDateWIB}</p>
                   </div>
                   <div className="text-right shrink-0 space-y-0.5">
                     <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${color}`}>

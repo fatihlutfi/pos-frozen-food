@@ -4,6 +4,13 @@ import prisma from "@/lib/prisma";
 import { unstable_cache } from "next/cache";
 import POSInterface from "./POSInterface";
 
+// Start of today in WIB as UTC Date — untuk filter endDate bundle
+function startOfTodayWIB() {
+  const WIB_MS = 7 * 60 * 60 * 1000;
+  const nowWIB = new Date(Date.now() + WIB_MS);
+  return new Date(Date.UTC(nowWIB.getUTCFullYear(), nowWIB.getUTCMonth(), nowWIB.getUTCDate()) - WIB_MS);
+}
+
 export const metadata = { title: "Kasir (POS) — POS Frozen Food" };
 
 // Cache produk + kategori 30 detik — data ini jarang berubah saat toko buka
@@ -60,12 +67,12 @@ export default async function POSPage() {
       orderBy: { expiryDate: "asc" },
     }),
 
-    // Bundling aktif — fail-safe jika tabel belum ada
+    // Bundling aktif hari ini (WIB) — fail-safe jika tabel belum ada
     prisma.bundle.findMany({
       where: {
         isActive: true,
         OR: [{ startDate: null }, { startDate: { lte: new Date() } }],
-        AND: [{ OR: [{ endDate: null }, { endDate: { gte: new Date() } }] }],
+        AND: [{ OR: [{ endDate: null }, { endDate: { gte: startOfTodayWIB() } }] }],
         ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}),
       },
       include: {

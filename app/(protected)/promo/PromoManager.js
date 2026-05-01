@@ -1,7 +1,121 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { formatRupiah } from "@/lib/format";
+
+// ── Timezone WIB (UTC+7) helpers ──────────────────────────────────────────
+const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+/** Tanggal hari ini dalam WIB sebagai string "YYYY-MM-DD" */
+function todayWIB() {
+  return new Date(Date.now() + WIB_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** Format tanggal dengan timezone WIB */
+function formatDateWIB(dateStr) {
+  if (!dateStr) return null;
+  return new Date(dateStr).toLocaleDateString("id-ID", {
+    timeZone: "Asia/Jakarta",
+    day: "numeric", month: "short", year: "numeric",
+  });
+}
+
+/** Hitung selisih hari berdasarkan batas hari WIB (bukan UTC) */
+function diffDaysWIB(expiryDate) {
+  const nowWIB     = new Date(Date.now() + WIB_OFFSET_MS);
+  const todayDayMs = Date.UTC(nowWIB.getUTCFullYear(), nowWIB.getUTCMonth(), nowWIB.getUTCDate());
+  const expWIB     = new Date(new Date(expiryDate).getTime() + WIB_OFFSET_MS);
+  const expDayMs   = Date.UTC(expWIB.getUTCFullYear(), expWIB.getUTCMonth(), expWIB.getUTCDate());
+  return Math.ceil((expDayMs - todayDayMs) / 86400000);
+}
+
+/** Status bundle berdasarkan tanggal WIB */
+function bundleStatus(bundle) {
+  const today = todayWIB();
+  // Normalisasi tanggal ke string YYYY-MM-DD dalam WIB untuk perbandingan hari
+  const startStr = bundle.startDate
+    ? new Date(new Date(bundle.startDate).getTime() + WIB_OFFSET_MS).toISOString().slice(0, 10)
+    : null;
+  const endStr   = bundle.endDate
+    ? new Date(new Date(bundle.endDate).getTime() + WIB_OFFSET_MS).toISOString().slice(0, 10)
+    : null;
+
+  if (endStr && endStr < today)   return "expired";
+  if (startStr && startStr > today) return "upcoming";
+  if (!bundle.isActive)           return "inactive";
+  return "active";
+}
+
+// ── Reusable product search input ─────────────────────────────────────────
+function ProductSearchInput({ products, value, onChange }) {
+  const [query,   setQuery]   = useState("");
+  const [open,    setOpen]    = useState(false);
+  const ref = useRef(null);
+
+  const selected = products.find((p) => p.id === value);
+
+  const results = query.trim().length > 0
+    ? products
+        .filter((p) => p.name.toLowerCase().includes(query.toLowerCase()))
+        .slice(0, 8)
+    : [];
+
+  useEffect(() => {
+    function handler(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  if (selected) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-2 border border-blue-400 bg-blue-50 rounded-lg">
+        <span className="flex-1 text-sm font-medium text-gray-800 truncate">{selected.name}</span>
+        <span className="text-xs text-gray-400 shrink-0">{formatRupiah(selected.price)}</span>
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          className="text-gray-400 hover:text-red-500 text-lg leading-none ml-1 cursor-pointer"
+        >
+          ×
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        placeholder="Cari nama produk…"
+        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+      {open && query.trim().length > 0 && (
+        <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-52 overflow-y-auto">
+          {results.length === 0 ? (
+            <p className="px-4 py-3 text-sm text-gray-400 text-center">Produk tidak ditemukan</p>
+          ) : (
+            results.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => { onChange(p.id); setQuery(""); setOpen(false); }}
+                className="w-full text-left px-4 py-2.5 text-sm hover:bg-blue-50 flex items-center justify-between gap-2 cursor-pointer"
+              >
+                <span className="font-medium text-gray-800 truncate">{p.name}</span>
+                <span className="text-xs text-gray-400 shrink-0">{formatRupiah(p.price)}</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const TABS = [
   { key: "diskon",   label: "🏷️ Diskon Qty"     },
@@ -319,17 +433,11 @@ export default function PromoManager({ products, branches }) {
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
             <h2 className="font-semibold text-gray-800 mb-4">Tambah Aturan Diskon Qty</h2>
             <form onSubmit={handleAddDiscount} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-              <select
+              <ProductSearchInput
+                products={products}
                 value={discForm.productId}
-                onChange={(e) => setDiscForm({ ...discForm, productId: e.target.value })}
-                required
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-              >
-                <option value="">Pilih Produk</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name} — {formatRupiah(p.price)}</option>
-                ))}
-              </select>
+                onChange={(id) => setDiscForm({ ...discForm, productId: id })}
+              />
               <select
                 value={discForm.branchId}
                 onChange={(e) => setDiscForm({ ...discForm, branchId: e.target.value })}
@@ -503,16 +611,13 @@ export default function PromoManager({ products, branches }) {
                   <div className="space-y-2">
                     {bundleForm.items.map((item, idx) => (
                       <div key={idx} className="flex gap-2 items-center">
-                        <select
-                          value={item.productId}
-                          onChange={(e) => updateBundleItem(idx, "productId", e.target.value)}
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                        >
-                          <option value="">Pilih Produk</option>
-                          {products.map((p) => (
-                            <option key={p.id} value={p.id}>{p.name} — {formatRupiah(p.price)}</option>
-                          ))}
-                        </select>
+                        <div className="flex-1">
+                          <ProductSearchInput
+                            products={products}
+                            value={item.productId}
+                            onChange={(id) => updateBundleItem(idx, "productId", id)}
+                          />
+                        </div>
                         <input
                           type="number" min="1"
                           value={item.quantity}
@@ -614,24 +719,17 @@ export default function PromoManager({ products, branches }) {
                 {bundles.map((bundle) => {
                   const normalPrice = bundle.items.reduce((s, i) => s + (i.product.price * i.quantity), 0);
                   const hemat       = normalPrice - bundle.bundlePrice;
-                  const now         = new Date();
-                  const isExpired   = bundle.endDate && new Date(bundle.endDate) < now;
-                  const isUpcoming  = bundle.startDate && new Date(bundle.startDate) > now;
+                  const status      = bundleStatus(bundle); // WIB-aware
                   return (
                     <div key={bundle.id} className="p-5 hover:bg-gray-50 transition">
                       <div className="flex items-start justify-between gap-4">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-semibold text-gray-800">{bundle.name}</p>
-                            {bundle.isActive && !isExpired && !isUpcoming ? (
-                              <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">Aktif</span>
-                            ) : isExpired ? (
-                              <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full">Expired</span>
-                            ) : isUpcoming ? (
-                              <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full">Belum Mulai</span>
-                            ) : (
-                              <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full">Nonaktif</span>
-                            )}
+                            {status === "active"   && <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full font-medium">Aktif</span>}
+                            {status === "expired"  && <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full">Berakhir</span>}
+                            {status === "upcoming" && <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full">Belum Mulai</span>}
+                            {status === "inactive" && <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full">Nonaktif</span>}
                             {bundle.branch && (
                               <span className="text-xs text-gray-400">📍 {bundle.branch.name}</span>
                             )}
@@ -654,9 +752,9 @@ export default function PromoManager({ products, branches }) {
                           </div>
                           {(bundle.startDate || bundle.endDate) && (
                             <p className="text-xs text-gray-400 mt-1">
-                              {bundle.startDate ? new Date(bundle.startDate).toLocaleDateString("id-ID") : "—"}
+                              {formatDateWIB(bundle.startDate) ?? "—"}
                               {" → "}
-                              {bundle.endDate ? new Date(bundle.endDate).toLocaleDateString("id-ID") : "∞"}
+                              {formatDateWIB(bundle.endDate) ?? "∞"}
                             </p>
                           )}
                         </div>
@@ -786,22 +884,25 @@ export default function PromoManager({ products, branches }) {
                 ) : (
                   <div className="divide-y divide-gray-50">
                     {expiryBatches.map((b) => {
-                      const diffDays  = Math.ceil((new Date(b.expiryDate) - new Date()) / 86400000);
-                      const isCrit    = diffDays >= 0 && diffDays < (expirySettings?.criticalDays ?? 7);
-                      const isWarn    = diffDays >= (expirySettings?.criticalDays ?? 7) && diffDays < (expirySettings?.warningDays ?? 30);
-                      const clsBadge  = diffDays < 0  ? "bg-black text-white"
-                                      : isCrit        ? "bg-red-600 text-white"
-                                      : isWarn        ? "bg-orange-500 text-white"
-                                      : "bg-yellow-400 text-gray-900";
-                      const labelBadge = diffDays < 0  ? "Expired"
-                                       : isCrit        ? `Deal Today (-${expirySettings?.criticalDiscount ?? 25}%)`
-                                       : isWarn        ? `Segera Habis (-${expirySettings?.warningDiscount ?? 15}%)`
+                      const diffDays   = diffDaysWIB(b.expiryDate); // WIB-aware
+                      const critDays   = expirySettings?.criticalDays ?? 7;
+                      const warnDays   = expirySettings?.warningDays  ?? 30;
+                      const isCrit     = diffDays >= 0 && diffDays < critDays;
+                      const isWarn     = diffDays >= critDays && diffDays < warnDays;
+                      const clsBadge   = diffDays < 0 ? "bg-black text-white"
+                                       : isCrit       ? "bg-red-600 text-white"
+                                       : isWarn       ? "bg-orange-500 text-white"
+                                       : "bg-yellow-400 text-gray-900";
+                      const labelBadge = diffDays < 0 ? "Expired"
+                                       : isCrit       ? `Deal Today (-${expirySettings?.criticalDiscount ?? 25}%)`
+                                       : isWarn       ? `Segera Habis (-${expirySettings?.warningDiscount ?? 15}%)`
                                        : "Segera Promo";
+                      const expDateWIB = new Date(b.expiryDate).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "numeric", month: "short", year: "numeric" });
                       return (
                         <div key={b.id} className="flex items-center justify-between px-5 py-3 gap-3 hover:bg-gray-50">
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-gray-800 truncate">{b.product.name}</p>
-                            <p className="text-xs text-gray-400">{b.branch.name} · Batch: {b.batchCode}</p>
+                            <p className="text-xs text-gray-400">{b.branch.name} · Batch: {b.batchCode} · Exp: {expDateWIB}</p>
                           </div>
                           <div className="text-right shrink-0 space-y-0.5">
                             <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${clsBadge}`}>
