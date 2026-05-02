@@ -2,6 +2,12 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
+const CreateOpnameSchema = z.object({
+  branchId: z.string().min(1),
+  note:     z.string().max(500).optional(),
+});
 
 // GET /api/stock-opname — daftar sesi opname (admin only)
 export async function GET(req) {
@@ -41,11 +47,20 @@ export async function POST(req) {
   }
 
   try {
-    const { branchId, note } = await req.json();
-
-    if (!branchId) {
-      return NextResponse.json({ error: "branchId wajib diisi" }, { status: 400 });
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Request body tidak valid" }, { status: 400 });
     }
+
+    const parsed = CreateOpnameSchema.safeParse(body);
+    if (!parsed.success) {
+      const details = parsed.error.issues.map((i) =>
+        i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message
+      );
+      return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
+    }
+
+    const { branchId, note } = parsed.data;
 
     // Cek cabang ada
     const branch = await prisma.branch.findUnique({ where: { id: branchId } });

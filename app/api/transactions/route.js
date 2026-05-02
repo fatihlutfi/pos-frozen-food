@@ -4,6 +4,24 @@ import prisma from "@/lib/prisma";
 import prismaTx from "@/lib/prisma-tx";
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
+// ── Zod schema ──────────────────────────────────────────────────────────────
+const CartItemSchema = z.object({
+  productId:       z.string().min(1),
+  quantity:        z.number().int().positive().max(9999),
+  price:           z.number().nonnegative(),
+  discountPercent: z.number().min(0).max(100).optional(),
+});
+
+const TransactionSchema = z.object({
+  branchId:       z.string().min(1).optional(),
+  paymentMethod:  z.enum(["CASH", "TRANSFER_BANK", "QRIS"]),
+  items:          z.array(CartItemSchema).min(1).max(100),
+  discountAmount: z.number().nonnegative().optional(),
+  amountPaid:     z.number().nonnegative().optional(),
+  note:           z.string().max(500).optional(),
+});
 
 // GET /api/transactions — untuk halaman riwayat
 export async function GET(req) {
@@ -52,8 +70,20 @@ export async function POST(req) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const body = await req.json();
-    const { items, paymentMethod, discountAmount, amountPaid, note, branchId: bodyBranchId } = body;
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Request body tidak valid" }, { status: 400 });
+    }
+
+    const parsed = TransactionSchema.safeParse(body);
+    if (!parsed.success) {
+      const details = parsed.error.issues.map((i) =>
+        i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message
+      );
+      return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
+    }
+
+    const { items, paymentMethod, discountAmount, amountPaid, note, branchId: bodyBranchId } = parsed.data;
 
     // ── Tentukan cabang ─────────────────────────────────────────────────────
     const branchId = session.user.role === "KASIR" ? session.user.branchId : bodyBranchId;
@@ -75,11 +105,8 @@ export async function POST(req) {
     }
 
     // ── Validasi input ──────────────────────────────────────────────────────
+    // items & paymentMethod sudah divalidasi Zod di atas
     if (!branchId) return NextResponse.json({ error: "Cabang wajib dipilih" }, { status: 400 });
-    if (!items?.length) return NextResponse.json({ error: "Keranjang belanja kosong" }, { status: 400 });
-    if (!["CASH", "TRANSFER_BANK", "QRIS"].includes(paymentMethod)) {
-      return NextResponse.json({ error: "Metode pembayaran tidak valid" }, { status: 400 });
-    }
 
     // ── Pre-validasi stok (fast fail sebelum masuk tx) ──────────────────────
     const productIds = items.map((i) => i.productId);

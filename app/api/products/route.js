@@ -2,6 +2,15 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
+const CreateProductSchema = z.object({
+  name:        z.string().min(1).max(200),
+  description: z.string().max(1000).optional(),
+  price:       z.number().int().positive(),
+  costPrice:   z.number().int().nonnegative().optional(),
+  categoryId:  z.string().min(1),
+});
 
 export async function GET(req) {
   const session = await getServerSession(authOptions);
@@ -46,13 +55,26 @@ export async function POST(req) {
   }
 
   try {
-    const { name, description, price, costPrice, categoryId } = await req.json();
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Request body tidak valid" }, { status: 400 });
+    }
 
-    if (!name?.trim()) return NextResponse.json({ error: "Nama produk wajib diisi" }, { status: 400 });
-    if (!price || price <= 0) return NextResponse.json({ error: "Harga jual tidak valid" }, { status: 400 });
-    if (!categoryId) return NextResponse.json({ error: "Kategori wajib dipilih" }, { status: 400 });
+    const parsed = CreateProductSchema.safeParse({
+      ...body,
+      price:     typeof body.price     === "string" ? parseInt(body.price)     : body.price,
+      costPrice: typeof body.costPrice === "string" ? parseInt(body.costPrice) : body.costPrice,
+    });
+    if (!parsed.success) {
+      const details = parsed.error.issues.map((i) =>
+        i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message
+      );
+      return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
+    }
 
-    // Cek kategori exist
+    const { name, description, price, costPrice, categoryId } = parsed.data;
+
+    // name, price, categoryId sudah divalidasi Zod di atas — cek kategori exist
     const category = await prisma.category.findUnique({ where: { id: categoryId } });
     if (!category) return NextResponse.json({ error: "Kategori tidak ditemukan" }, { status: 404 });
 
@@ -63,8 +85,8 @@ export async function POST(req) {
       data: {
         name: name.trim(),
         description: description?.trim() || null,
-        price:       parseInt(price),
-        costPrice:   parseInt(costPrice) || 0,
+        price,
+        costPrice: costPrice ?? 0,
         categoryId,
         stocks: {
           create: branches.map((b) => ({
