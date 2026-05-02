@@ -221,9 +221,9 @@ export async function GET(req) {
     currentStockMap[p.id] = { name: p.name, currentStock: p.stocks.reduce((s, st) => s + st.quantity, 0) };
   }
 
+  // Kirim semua produk — slicing (5/15) ditangani di frontend oleh ProductListCard
   const topByQty = [...soldProducts]
     .sort((a, b) => b.qty - a.qty)
-    .slice(0, 5)
     .map((p) => ({
       name: p.name, qty: p.qty, revenue: p.revenue,
       currentStock: currentStockMap[p.id]?.currentStock ?? 0,
@@ -232,7 +232,6 @@ export async function GET(req) {
 
   const bottomByQty = [...soldProducts]
     .sort((a, b) => a.qty - b.qty)
-    .slice(0, 5)
     .map((p) => {
       const currentStock = currentStockMap[p.id]?.currentStock ?? 0;
       return {
