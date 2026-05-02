@@ -140,6 +140,147 @@ function sortRows(rows, key, dir) {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
+/**
+ * ProductListCard
+ * Reusable card untuk "Produk Terlaris" dan "Produk Tidak Laris".
+ * Mengelola state show-more secara mandiri — setiap instance independen.
+ *
+ * variant="top"    → kolom: #, Produk (+ bar), Qty, Pendapatan, Tren
+ * variant="bottom" → kolom: Produk, Qty, Tren, Stok, Status
+ */
+function ProductListCard({ title, icon, subtitle, data = [], variant, periodInfo }) {
+  const [showMore, setShowMore] = useState(false);
+
+  const COLLAPSED_LIMIT = 5;
+  const EXPANDED_LIMIT  = 15;
+  const displayed  = data.slice(0, showMore ? EXPANDED_LIMIT : COLLAPSED_LIMIT);
+  const hasMore    = data.length > COLLAPSED_LIMIT;
+  const totalShown = Math.min(EXPANDED_LIMIT, data.length);
+  const showTrend  = !!periodInfo;
+
+  return (
+    <div className="print-card bg-white rounded-xl border border-gray-200 overflow-hidden">
+      {/* Header */}
+      <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
+        <span className="text-base">{icon}</span>
+        <h3 className="font-semibold text-gray-800 text-sm">{title}</h3>
+        <span className="text-xs text-gray-400 ml-auto">{subtitle}</span>
+      </div>
+
+      {/* Empty state */}
+      {data.length === 0 ? (
+        <div className="py-10 text-center text-gray-400 text-sm">
+          Belum ada penjualan dalam periode ini
+        </div>
+      ) : (
+        <>
+          {/* Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  {variant === "top" && (
+                    <th className="text-left px-4 py-2.5 text-gray-500 font-medium text-xs">#</th>
+                  )}
+                  <th className="text-left px-4 py-2.5 text-gray-500 font-medium text-xs">Produk</th>
+                  <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Qty Terjual</th>
+                  {showTrend && (
+                    <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Tren</th>
+                  )}
+                  {variant === "top" && (
+                    <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Pendapatan</th>
+                  )}
+                  {variant === "bottom" && (
+                    <>
+                      <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Stok Saat Ini</th>
+                      <th className="px-4 py-2.5 text-gray-500 font-medium text-xs">Status</th>
+                    </>
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {displayed.map((p, i) => (
+                  <tr key={p.name} className="hover:bg-gray-50">
+                    {/* Rank — top only */}
+                    {variant === "top" && (
+                      <td className="px-4 py-3 text-xs font-bold text-amber-500">{i + 1}</td>
+                    )}
+
+                    {/* Produk cell */}
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-gray-800 text-sm">{p.name}</p>
+                      {variant === "top" && (
+                        <div className="mt-1 w-full bg-gray-100 rounded-full h-1.5">
+                          <div
+                            className="bg-amber-400 h-1.5 rounded-full"
+                            style={{
+                              width: `${Math.round((p.qty / (data[0]?.qty || 1)) * 100)}%`,
+                            }}
+                          />
+                        </div>
+                      )}
+                      {variant === "bottom" && (
+                        <p className="text-xs text-gray-400">{formatRupiah(p.revenue)}</p>
+                      )}
+                    </td>
+
+                    {/* Qty */}
+                    <td className={`px-4 py-3 text-right font-bold ${variant === "top" ? "text-gray-900" : "text-gray-700"}`}>
+                      {p.qty}
+                    </td>
+
+                    {/* Tren */}
+                    {showTrend && (
+                      <td className="px-4 py-3 text-right">
+                        <TrendBadge trend={p.trend} />
+                      </td>
+                    )}
+
+                    {/* Pendapatan — top only */}
+                    {variant === "top" && (
+                      <td className="px-4 py-3 text-right font-semibold text-green-600 whitespace-nowrap text-xs">
+                        {formatRupiah(p.revenue)}
+                      </td>
+                    )}
+
+                    {/* Stok + Status — bottom only */}
+                    {variant === "bottom" && (
+                      <>
+                        <td className="px-4 py-3 text-right text-gray-600">{p.currentStock}</td>
+                        <td className="px-4 py-3">
+                          {p.needsPromo && (
+                            <span className="inline-block bg-orange-100 text-orange-700 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">
+                              Perlu Promo
+                            </span>
+                          )}
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Show more / less button */}
+          {hasMore && (
+            <div className="px-5 py-3 border-t border-gray-100 no-print text-center">
+              <button
+                onClick={() => setShowMore((v) => !v)}
+                className="text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
+              >
+                {showMore
+                  ? "Tampilkan lebih sedikit"
+                  : `Tampilkan lebih banyak (${totalShown} dari ${data.length})`}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function SortTh({ label, sortKey, currentKey, currentDir, onSort, className = "" }) {
   const active = currentKey === sortKey;
   return (
@@ -260,8 +401,6 @@ export default function ReportView({ isAdmin, branches, defaultBranchId, default
       const data = await res.json();
       setReport(data);
       setHasLoaded(true);
-      setShowMoreTop(false);
-      setShowMoreBottom(false);
       setAppliedFrom(params.dateFrom || "");
       setAppliedTo(params.dateTo || "");
       setAppliedBranch(params.branchId || "");
@@ -305,10 +444,6 @@ export default function ReportView({ isAdmin, branches, defaultBranchId, default
     if (!report?.transactionList) return [];
     return sortRows(report.transactionList, sortKey, sortDir);
   }, [report, sortKey, sortDir]);
-
-  // "Lihat Lebih Banyak" untuk analisis produk
-  const [showMoreTop,    setShowMoreTop]    = useState(false);
-  const [showMoreBottom, setShowMoreBottom] = useState(false);
 
   return (
     <>
@@ -601,140 +736,22 @@ export default function ReportView({ isAdmin, branches, defaultBranchId, default
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-                  {/* 1. Produk Terlaris (top by qty) */}
-                  <div className="print-card bg-white rounded-xl border border-gray-200 overflow-hidden">
-                    <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
-                      <span className="text-base">🏆</span>
-                      <h3 className="font-semibold text-gray-800 text-sm">Produk Terlaris</h3>
-                      <span className="text-xs text-gray-400 ml-auto">by qty terjual</span>
-                    </div>
-                    {report.productAnalysis.topByQty.length === 0 ? (
-                      <div className="py-10 text-center text-gray-400 text-sm">Belum ada penjualan dalam periode ini</div>
-                    ) : (
-                      <>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-sm">
-                            <thead className="bg-gray-50">
-                              <tr>
-                                <th className="text-left px-4 py-2.5 text-gray-500 font-medium text-xs">#</th>
-                                <th className="text-left px-4 py-2.5 text-gray-500 font-medium text-xs">Produk</th>
-                                <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Qty Terjual</th>
-                                <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Pendapatan</th>
-                                {report.periodInfo && (
-                                  <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Tren</th>
-                                )}
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                              {report.productAnalysis.topByQty.slice(0, showMoreTop ? 15 : 5).map((p, i) => {
-                                const maxQty = report.productAnalysis.topByQty[0]?.qty || 1;
-                                const barPct = Math.round((p.qty / maxQty) * 100);
-                                return (
-                                  <tr key={p.name} className="hover:bg-gray-50">
-                                    <td className="px-4 py-3 text-xs font-bold text-amber-500">{i + 1}</td>
-                                    <td className="px-4 py-3">
-                                      <p className="font-medium text-gray-800 text-sm">{p.name}</p>
-                                      <div className="mt-1 w-full bg-gray-100 rounded-full h-1.5">
-                                        <div className="bg-amber-400 h-1.5 rounded-full" style={{ width: `${barPct}%` }} />
-                                      </div>
-                                    </td>
-                                    <td className="px-4 py-3 text-right font-bold text-gray-900">{p.qty}</td>
-                                    <td className="px-4 py-3 text-right font-semibold text-green-600 whitespace-nowrap text-xs">
-                                      {formatRupiah(p.revenue)}
-                                    </td>
-                                    {report.periodInfo && (
-                                      <td className="px-4 py-3 text-right">
-                                        <TrendBadge trend={p.trend} />
-                                      </td>
-                                    )}
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                        {report.productAnalysis.topByQty.length > 5 && (
-                          <div className="px-5 py-3 border-t border-gray-100 no-print">
-                            <button
-                              onClick={() => setShowMoreTop((v) => !v)}
-                              className="text-xs font-medium text-blue-600 hover:text-blue-800 transition cursor-pointer"
-                            >
-                              {showMoreTop
-                                ? "Tampilkan lebih sedikit"
-                                : `Lihat Lebih Banyak (${Math.min(15, report.productAnalysis.topByQty.length)} dari ${report.productAnalysis.topByQty.length})`}
-                            </button>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-
-                  {/* 2. Produk Tidak Laris (bottom by qty) */}
-                  <div className="print-card bg-white rounded-xl border border-gray-200 overflow-hidden">
-                    <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
-                      <span className="text-base">📉</span>
-                      <h3 className="font-semibold text-gray-800 text-sm">Produk Tidak Laris</h3>
-                      <span className="text-xs text-gray-400 ml-auto">qty terjual paling sedikit</span>
-                    </div>
-                    {report.productAnalysis.bottomByQty.length === 0 ? (
-                      <div className="py-10 text-center text-gray-400 text-sm">Belum ada penjualan dalam periode ini</div>
-                    ) : (
-                      <>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-sm">
-                            <thead className="bg-gray-50">
-                              <tr>
-                                <th className="text-left px-4 py-2.5 text-gray-500 font-medium text-xs">Produk</th>
-                                <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Qty Terjual</th>
-                                {report.periodInfo && (
-                                  <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Tren</th>
-                                )}
-                                <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Stok Saat Ini</th>
-                                <th className="px-4 py-2.5 text-gray-500 font-medium text-xs">Status</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                              {report.productAnalysis.bottomByQty.slice(0, showMoreBottom ? 15 : 5).map((p) => (
-                                <tr key={p.name} className="hover:bg-gray-50">
-                                  <td className="px-4 py-3">
-                                    <p className="font-medium text-gray-800 text-sm">{p.name}</p>
-                                    <p className="text-xs text-gray-400">{formatRupiah(p.revenue)}</p>
-                                  </td>
-                                  <td className="px-4 py-3 text-right font-bold text-gray-700">{p.qty}</td>
-                                  {report.periodInfo && (
-                                    <td className="px-4 py-3 text-right">
-                                      <TrendBadge trend={p.trend} />
-                                    </td>
-                                  )}
-                                  <td className="px-4 py-3 text-right text-gray-600">{p.currentStock}</td>
-                                  <td className="px-4 py-3">
-                                    {p.needsPromo && (
-                                      <span className="inline-block bg-orange-100 text-orange-700 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">
-                                        Perlu Promo
-                                      </span>
-                                    )}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                        {report.productAnalysis.bottomByQty.length > 5 && (
-                          <div className="px-5 py-3 border-t border-gray-100 no-print">
-                            <button
-                              onClick={() => setShowMoreBottom((v) => !v)}
-                              className="text-xs font-medium text-blue-600 hover:text-blue-800 transition cursor-pointer"
-                            >
-                              {showMoreBottom
-                                ? "Tampilkan lebih sedikit"
-                                : `Lihat Lebih Banyak (${Math.min(15, report.productAnalysis.bottomByQty.length)} dari ${report.productAnalysis.bottomByQty.length})`}
-                            </button>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
+                  <ProductListCard
+                    title="Produk Terlaris"
+                    icon="🏆"
+                    subtitle="by qty terjual"
+                    data={report.productAnalysis.topByQty}
+                    variant="top"
+                    periodInfo={report.periodInfo}
+                  />
+                  <ProductListCard
+                    title="Produk Tidak Laris"
+                    icon="📉"
+                    subtitle="qty terjual paling sedikit"
+                    data={report.productAnalysis.bottomByQty}
+                    variant="bottom"
+                    periodInfo={report.periodInfo}
+                  />
                 </div>
 
                 {/* 3. Produk Stagnan */}

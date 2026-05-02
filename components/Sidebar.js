@@ -27,7 +27,7 @@ const navKasir = [
   { href: "/transactions", label: "Transaksi Saya", icon: "📋", lucide: null },
 ];
 
-export default function Sidebar({ role, userName, branchName }) {
+export default function Sidebar({ role, userName, branchName, isOpen, onClose }) {
   const pathname  = usePathname();
   const router    = useRouter();
   const navItems  = role === "ADMIN" ? navAdmin : navKasir;
@@ -36,13 +36,10 @@ export default function Sidebar({ role, userName, branchName }) {
   const [checkingShift,  setCheckingShift]  = useState(false);
 
   async function handleLogout() {
-    // Admin: langsung keluar
     if (role === "ADMIN") {
       signOut({ callbackUrl: "/login" });
       return;
     }
-
-    // Kasir: cek shift aktif sebelum keluar
     setCheckingShift(true);
     try {
       const res  = await fetch("/api/shifts?status=OPEN&limit=1");
@@ -61,24 +58,69 @@ export default function Sidebar({ role, userName, branchName }) {
 
   function goToShifts() {
     setShowShiftModal(false);
+    onClose?.();
     router.push("/shifts");
   }
 
   return (
     <>
-      {/* Sidebar */}
-      <aside className="h-full w-full bg-slate-900 text-white flex flex-col">
-        {/* Logo */}
-        <div className="flex items-center gap-3 px-5 py-5 border-b border-slate-700">
+      {/*
+        Backdrop — hanya muncul di mobile saat drawer terbuka.
+        lg:hidden memastikan tidak muncul di desktop.
+      */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+
+      {/*
+        Sidebar panel
+        ─────────────────────────────────────────────
+        Mobile  : fixed overlay, slide dari kiri
+                  - Tersembunyi : -translate-x-full
+                  - Terbuka     : translate-x-0
+                  - Lebar       : 75% layar, max 280px
+        Desktop : static, selalu visible, lebar 100%
+                  dari wrapper div (w-64) di AppShell
+        ─────────────────────────────────────────────
+      */}
+      <aside
+        className={[
+          // Base — layout & warna
+          "flex flex-col bg-slate-900 text-white",
+          // Mobile: fixed overlay dengan animasi slide
+          "fixed inset-y-0 left-0 z-40 w-[75%] max-w-[280px]",
+          "transition-transform duration-300 ease-in-out",
+          isOpen ? "translate-x-0" : "-translate-x-full",
+          // Desktop: kembali ke flow normal, override semua mobile override
+          "lg:static lg:inset-auto lg:z-auto lg:w-full lg:h-full",
+          "lg:translate-x-0",
+        ].join(" ")}
+      >
+        {/* Logo + tombol tutup (close button hanya di mobile) */}
+        <div className="flex items-center gap-3 px-5 py-5 border-b border-slate-700 shrink-0">
           <span className="text-2xl">🧊</span>
-          <div>
+          <div className="flex-1 min-w-0">
             <p className="font-bold text-sm leading-tight">POS Frozen Food</p>
             <p className="text-slate-400 text-xs">Multi-Cabang</p>
           </div>
+          {/* Tombol ✕ — hanya di mobile */}
+          <button
+            onClick={onClose}
+            className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition cursor-pointer shrink-0"
+            aria-label="Tutup menu"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
         {/* User info */}
-        <div className="px-5 py-4 border-b border-slate-700">
+        <div className="px-5 py-4 border-b border-slate-700 shrink-0">
           <p className="text-xs text-slate-400 mb-0.5">Login sebagai</p>
           <p className="text-sm font-semibold truncate">{userName}</p>
           <div className="flex items-center gap-2 mt-1">
@@ -110,6 +152,7 @@ export default function Sidebar({ role, userName, branchName }) {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={onClose}
                 className={`
                   flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
                   ${
@@ -119,7 +162,7 @@ export default function Sidebar({ role, userName, branchName }) {
                   }
                 `}
               >
-                <span className="w-5 flex items-center justify-center">
+                <span className="w-5 flex items-center justify-center shrink-0">
                   {LucideIcon
                     ? <LucideIcon size={16} />
                     : <span className="text-base leading-none">{item.icon}</span>
@@ -132,13 +175,13 @@ export default function Sidebar({ role, userName, branchName }) {
         </nav>
 
         {/* Logout */}
-        <div className="px-3 py-4 border-t border-slate-700">
+        <div className="px-3 py-4 border-t border-slate-700 shrink-0">
           <button
             onClick={handleLogout}
             disabled={checkingShift}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-300 hover:bg-red-600/20 hover:text-red-400 transition-colors cursor-pointer disabled:opacity-60"
           >
-            <span className="text-base w-5 text-center">
+            <span className="text-base w-5 text-center shrink-0">
               {checkingShift ? (
                 <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
