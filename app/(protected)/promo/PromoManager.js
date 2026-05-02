@@ -136,11 +136,15 @@ export default function PromoManager({ products, branches }) {
   const [tab, setTab] = useState("diskon");
 
   // ─── Diskon Qty ───────────────────────────────────────────
-  const [discRules,   setDiscRules]   = useState([]);
-  const [discLoading, setDiscLoading] = useState(false);
-  const [discError,   setDiscError]   = useState("");
-  const [discForm,    setDiscForm]    = useState(EMPTY_DISC_FORM);
-  const [discSaving,  setDiscSaving]  = useState(false);
+  const [discRules,      setDiscRules]      = useState([]);
+  const [discLoading,    setDiscLoading]    = useState(false);
+  const [discError,      setDiscError]      = useState("");
+  const [discForm,       setDiscForm]       = useState(EMPTY_DISC_FORM);
+  const [discSaving,     setDiscSaving]     = useState(false);
+  const [editingDisc,    setEditingDisc]    = useState(null); // rule yang sedang diedit
+  const [editDiscForm,   setEditDiscForm]   = useState({ minQty: "", discountPercent: "" });
+  const [editDiscSaving, setEditDiscSaving] = useState(false);
+  const [editDiscError,  setEditDiscError]  = useState("");
 
   // ─── Bundling ─────────────────────────────────────────────
   const [bundles,        setBundles]        = useState([]);
@@ -152,12 +156,19 @@ export default function PromoManager({ products, branches }) {
   const [bundleSaving,   setBundleSaving]   = useState(false);
 
   // ─── Promo Expiry ─────────────────────────────────────────
-  const [expirySettings, setExpirySettings] = useState(null);
-  const [expiryBatches,  setExpiryBatches]  = useState([]);
-  const [expiryLoading,  setExpiryLoading]  = useState(false);
-  const [expiryForm,     setExpiryForm]     = useState(EMPTY_EXPIRY_FORM);
-  const [expirySaving,   setExpirySaving]   = useState(false);
-  const [expiryError,    setExpiryError]    = useState("");
+  const [expirySettings,   setExpirySettings]   = useState(null);
+  const [expiryBatches,    setExpiryBatches]     = useState([]);
+  const [expiryLoading,    setExpiryLoading]     = useState(false);
+  const [expiryForm,       setExpiryForm]        = useState(EMPTY_EXPIRY_FORM);
+  const [expirySaving,     setExpirySaving]      = useState(false);
+  const [expiryError,      setExpiryError]       = useState("");
+  const [editingBatch,     setEditingBatch]      = useState(null); // batch yang diedit
+  const [editBatchDate,    setEditBatchDate]      = useState("");
+  const [editBatchSaving,  setEditBatchSaving]   = useState(false);
+  const [editBatchError,   setEditBatchError]    = useState("");
+  const [deletingBatch,    setDeletingBatch]     = useState(null); // {id, batchCode, productName}
+  const [batchDeleting,    setBatchDeleting]     = useState(false);
+  const [batchDeleteError, setBatchDeleteError]  = useState("");
 
   // ─── Load on tab switch ───────────────────────────────────
   useEffect(() => {
@@ -220,6 +231,42 @@ export default function PromoManager({ products, branches }) {
       setDiscRules((prev) => prev.filter((r) => r.id !== ruleId));
     } catch {
       alert("Gagal menghapus");
+    }
+  }
+
+  function openEditDiscount(rule) {
+    setEditingDisc(rule);
+    setEditDiscForm({ minQty: String(rule.minQty), discountPercent: String(rule.discountPercent) });
+    setEditDiscError("");
+  }
+
+  async function handleSaveEditDiscount() {
+    if (!editDiscForm.minQty || !editDiscForm.discountPercent) {
+      setEditDiscError("Isi semua field"); return;
+    }
+    setEditDiscSaving(true);
+    setEditDiscError("");
+    const { id: ruleId, productId, branchId, minQty: oldMinQty } = editingDisc;
+    const newMinQty = parseInt(editDiscForm.minQty);
+    try {
+      // Jika minQty berubah, hapus rule lama terlebih dahulu
+      if (newMinQty !== oldMinQty) {
+        await fetch(`/api/products/${productId}/discount-rules?ruleId=${ruleId}`, { method: "DELETE" });
+      }
+      // Upsert (create jika minQty baru, update jika sama)
+      const res = await fetch(`/api/products/${productId}/discount-rules`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ branchId, minQty: newMinQty, discountPercent: parseFloat(editDiscForm.discountPercent) }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setEditDiscError(data.error || "Gagal menyimpan"); return; }
+      setEditingDisc(null);
+      await loadDiscountRules();
+    } catch {
+      setEditDiscError("Terjadi kesalahan");
+    } finally {
+      setEditDiscSaving(false);
     }
   }
 
@@ -382,6 +429,50 @@ export default function PromoManager({ products, branches }) {
     }
   }
 
+  async function handleSaveEditBatch() {
+    if (!editBatchDate) { setEditBatchError("Pilih tanggal expired"); return; }
+    setEditBatchSaving(true);
+    setEditBatchError("");
+    try {
+      const res = await fetch(`/api/batches/${editingBatch.id}`, {
+        method:  "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ expiryDate: editBatchDate }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        setEditBatchError(d.error || "Gagal menyimpan");
+        return;
+      }
+      setEditingBatch(null);
+      await loadExpiryData();
+    } catch {
+      setEditBatchError("Terjadi kesalahan");
+    } finally {
+      setEditBatchSaving(false);
+    }
+  }
+
+  async function handleDeleteBatch() {
+    if (!deletingBatch) return;
+    setBatchDeleting(true);
+    setBatchDeleteError("");
+    try {
+      const res = await fetch(`/api/batches/${deletingBatch.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const d = await res.json();
+        setBatchDeleteError(d.error || "Gagal menghapus");
+        return;
+      }
+      setDeletingBatch(null);
+      await loadExpiryData();
+    } catch {
+      setBatchDeleteError("Terjadi kesalahan");
+    } finally {
+      setBatchDeleting(false);
+    }
+  }
+
   async function handleSaveExpirySettings(e) {
     e.preventDefault();
     setExpirySaving(true);
@@ -516,18 +607,78 @@ export default function PromoManager({ products, branches }) {
                         </span>
                       </td>
                       <td className="px-5 py-3 text-right">
-                        <button
-                          onClick={() => handleDeleteDiscount(r.productId, r.id)}
-                          className="px-3 py-1 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition cursor-pointer"
-                        >
-                          Hapus
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => openEditDiscount(r)}
+                            className="px-3 py-1 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition cursor-pointer"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteDiscount(r.productId, r.id)}
+                            className="px-3 py-1 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition cursor-pointer"
+                          >
+                            Hapus
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Edit Diskon Qty */}
+      {editingDisc && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+          onClick={(e) => { if (e.target === e.currentTarget) setEditingDisc(null); }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-gray-900">Edit Aturan Diskon</h2>
+            <div className="text-sm text-gray-600 space-y-0.5">
+              <p><span className="font-medium">Produk:</span> {editingDisc.product.name}</p>
+              <p><span className="font-medium">Cabang:</span> {editingDisc.branch.name}</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Min. Qty (pcs)</label>
+              <input
+                type="number" min="1"
+                value={editDiscForm.minQty}
+                onChange={(e) => setEditDiscForm({ ...editDiscForm, minQty: e.target.value })}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Diskon (%)</label>
+              <input
+                type="number" min="0.1" max="99" step="0.1"
+                value={editDiscForm.discountPercent}
+                onChange={(e) => setEditDiscForm({ ...editDiscForm, discountPercent: e.target.value })}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            {editDiscError && (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{editDiscError}</p>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setEditingDisc(null)}
+                className="flex-1 py-2.5 border border-gray-300 text-gray-600 rounded-lg text-sm hover:bg-gray-50 transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleSaveEditDiscount}
+                disabled={editDiscSaving}
+                className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition cursor-pointer"
+              >
+                {editDiscSaving ? "Menyimpan…" : "Simpan"}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -900,17 +1051,38 @@ export default function PromoManager({ products, branches }) {
                       const expDateWIB = new Date(b.expiryDate).toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta", day: "numeric", month: "short", year: "numeric" });
                       return (
                         <div key={b.id} className="flex items-center justify-between px-5 py-3 gap-3 hover:bg-gray-50">
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-gray-800 truncate">{b.product.name}</p>
                             <p className="text-xs text-gray-400">{b.branch.name} · Batch: {b.batchCode} · Exp: {expDateWIB}</p>
                           </div>
-                          <div className="text-right shrink-0 space-y-0.5">
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${clsBadge}`}>
+                          <div className="text-right shrink-0 space-y-1">
+                            <span className={`inline-block text-xs px-2 py-0.5 rounded-full font-semibold ${clsBadge}`}>
                               {labelBadge}
                             </span>
                             <p className="text-xs text-gray-400">
                               {diffDays < 0 ? "Sudah lewat" : `${diffDays} hari`} · Sisa {b.quantity}
                             </p>
+                            <div className="flex gap-1.5 justify-end">
+                              <button
+                                onClick={() => {
+                                  setEditingBatch(b);
+                                  setEditBatchDate(new Date(b.expiryDate).toISOString().slice(0, 10));
+                                  setEditBatchError("");
+                                }}
+                                className="px-2 py-0.5 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded transition cursor-pointer"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setDeletingBatch({ id: b.id, batchCode: b.batchCode, productName: b.product.name });
+                                  setBatchDeleteError("");
+                                }}
+                                className="px-2 py-0.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded transition cursor-pointer"
+                              >
+                                Hapus
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );
@@ -920,6 +1092,92 @@ export default function PromoManager({ products, branches }) {
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* Modal: Edit Tanggal Batch */}
+      {editingBatch && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+          onClick={(e) => { if (e.target === e.currentTarget && !editBatchSaving) setEditingBatch(null); }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-gray-900">Edit Tanggal Expired</h2>
+            <div className="text-sm text-gray-600 space-y-0.5">
+              <p><span className="font-medium">Produk:</span> {editingBatch.product.name}</p>
+              <p><span className="font-medium">Batch:</span> {editingBatch.batchCode}</p>
+              <p><span className="font-medium">Cabang:</span> {editingBatch.branch.name}</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Tanggal Expired Baru <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={editBatchDate}
+                onChange={(e) => setEditBatchDate(e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            {editBatchError && (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{editBatchError}</p>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setEditingBatch(null)}
+                disabled={editBatchSaving}
+                className="flex-1 py-2.5 border border-gray-300 text-gray-600 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50 transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleSaveEditBatch}
+                disabled={editBatchSaving}
+                className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition cursor-pointer"
+              >
+                {editBatchSaving ? "Menyimpan…" : "Simpan"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Hapus Batch */}
+      {deletingBatch && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+          onClick={(e) => { if (e.target === e.currentTarget && !batchDeleting) setDeletingBatch(null); }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="text-center">
+              <span className="text-4xl">🗑️</span>
+              <h2 className="text-lg font-semibold text-gray-900 mt-2">Hapus Batch?</h2>
+            </div>
+            <p className="text-sm text-gray-600 text-center">
+              Batch <strong>{deletingBatch.batchCode}</strong> ({deletingBatch.productName}) akan dihapus dari database.
+              Sisa stok batch ini akan dikurangi dari total stok cabang.
+              Tindakan ini <strong>tidak dapat dibatalkan</strong>.
+            </p>
+            {batchDeleteError && (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{batchDeleteError}</p>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => { if (!batchDeleting) setDeletingBatch(null); }}
+                disabled={batchDeleting}
+                className="flex-1 py-2.5 border border-gray-300 text-gray-600 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50 transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleDeleteBatch}
+                disabled={batchDeleting}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition cursor-pointer"
+              >
+                {batchDeleting ? "Menghapus…" : "Ya, Hapus"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

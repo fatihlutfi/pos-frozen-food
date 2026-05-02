@@ -27,7 +27,7 @@ const navKasir = [
   { href: "/transactions", label: "Transaksi Saya", icon: "📋", lucide: null },
 ];
 
-export default function Sidebar({ role, userName, branchName, isOpen, onClose }) {
+export default function Sidebar({ role, userName, branchName }) {
   const pathname  = usePathname();
   const router    = useRouter();
   const navItems  = role === "ADMIN" ? navAdmin : navKasir;
@@ -61,29 +61,13 @@ export default function Sidebar({ role, userName, branchName, isOpen, onClose })
 
   function goToShifts() {
     setShowShiftModal(false);
-    onClose?.();
     router.push("/shifts");
   }
 
   return (
     <>
-      {/* Overlay mobile */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-20 lg:hidden"
-          onClick={onClose}
-        />
-      )}
-
       {/* Sidebar */}
-      <aside
-        className={`
-          fixed top-0 left-0 h-full w-64 bg-slate-900 text-white z-30
-          flex flex-col transition-transform duration-300 ease-in-out
-          ${isOpen ? "translate-x-0" : "-translate-x-full"}
-          lg:translate-x-0 lg:static lg:z-auto
-        `}
-      >
+      <aside className="h-full w-full bg-slate-900 text-white flex flex-col">
         {/* Logo */}
         <div className="flex items-center gap-3 px-5 py-5 border-b border-slate-700">
           <span className="text-2xl">🧊</span>
@@ -126,7 +110,6 @@ export default function Sidebar({ role, userName, branchName, isOpen, onClose })
               <Link
                 key={item.href}
                 href={item.href}
-                onClick={onClose}
                 className={`
                   flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
                   ${
