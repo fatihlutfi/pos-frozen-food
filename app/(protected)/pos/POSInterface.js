@@ -344,7 +344,7 @@ export default function POSInterface({
         paymentMethod,
         status:        "PENDING_SYNC",
         subtotal,
-        discountAmount: discountAmt,
+        discountAmount: 0,
         grandTotal,
         amountPaid: txPayload.amountPaid,
         changeAmount: change,
