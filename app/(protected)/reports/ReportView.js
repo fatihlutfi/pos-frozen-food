@@ -443,63 +443,6 @@ export default function ReportView({ isAdmin, branches, defaultBranchId, default
                   ))}
                 </div>
 
-                {/* Profit breakdown per produk */}
-                {report.profitByProduct && report.profitByProduct.length > 0 && (
-                  <div className="print-card bg-white rounded-xl border border-gray-200 overflow-hidden">
-                    <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
-                      <h3 className="font-semibold text-gray-800 text-sm">Breakdown Profit per Produk</h3>
-                      <span className="text-xs text-gray-400 ml-auto">{report.profitByProduct.length} produk</span>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-50 border-b border-gray-200">
-                          <tr>
-                            <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs">#</th>
-                            <th className="text-left px-4 py-3 font-medium text-gray-600 text-xs">Produk</th>
-                            <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs whitespace-nowrap">Qty</th>
-                            <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs whitespace-nowrap">Pendapatan</th>
-                            <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs whitespace-nowrap">HPP</th>
-                            <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs whitespace-nowrap">Profit</th>
-                            <th className="text-right px-4 py-3 font-medium text-gray-600 text-xs whitespace-nowrap">Margin %</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {report.profitByProduct.map((p, i) => (
-                            <tr key={p.name} className="hover:bg-gray-50">
-                              <td className="px-4 py-2.5 text-gray-400 text-xs">{i + 1}</td>
-                              <td className="px-4 py-2.5 font-medium text-gray-800">{p.name}</td>
-                              <td className="px-4 py-2.5 text-right text-gray-600">{p.qty}</td>
-                              <td className="px-4 py-2.5 text-right text-gray-800 whitespace-nowrap">{formatRupiah(p.revenue)}</td>
-                              <td className="px-4 py-2.5 text-right text-orange-500 whitespace-nowrap">
-                                {p.hpp > 0 ? formatRupiah(p.hpp) : <span className="text-gray-300">—</span>}
-                              </td>
-                              <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${p.profit >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                                {formatRupiah(p.profit)}
-                              </td>
-                              <td className={`px-4 py-2.5 text-right text-xs font-medium whitespace-nowrap ${p.marginPct >= 20 ? "text-blue-600" : p.marginPct >= 10 ? "text-gray-600" : "text-orange-500"}`}>
-                                {p.hpp > 0 ? `${p.marginPct.toFixed(1)}%` : <span className="text-gray-300">—</span>}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot className="bg-gray-50 border-t-2 border-gray-200">
-                          <tr>
-                            <td colSpan={3} className="px-4 py-3 font-semibold text-gray-800 text-sm">Total</td>
-                            <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatRupiah(report.summary.totalRevenue)}</td>
-                            <td className="px-4 py-3 text-right font-semibold text-orange-500">{formatRupiah(report.summary.totalHPP ?? 0)}</td>
-                            <td className={`px-4 py-3 text-right font-bold text-base ${(report.summary.netProfit ?? 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                              {formatRupiah(report.summary.netProfit ?? 0)}
-                            </td>
-                            <td className="px-4 py-3 text-right font-semibold text-blue-600">
-                              {(report.summary.marginPct ?? 0).toFixed(1)}%
-                            </td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
                 {/* Net profit per cabang */}
                 {report.byBranch && report.byBranch.length > 0 && (
                   <div className="print-card bg-white rounded-xl border border-gray-200 overflow-hidden">

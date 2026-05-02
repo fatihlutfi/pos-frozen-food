@@ -24,6 +24,11 @@ export default function StockOpnameList({ initialOpnames, branches }) {
   const [creating,      setCreating]      = useState(false);
   const [createError,   setCreateError]   = useState("");
 
+  // Hapus draft
+  const [deleteTarget,  setDeleteTarget]  = useState(null); // { id, shortId }
+  const [deleting,      setDeleting]      = useState(false);
+  const [deleteError,   setDeleteError]   = useState("");
+
   // ── Fetch list ──────────────────────────────────────────────
 
   async function fetchOpnames(params = {}) {
@@ -64,6 +69,28 @@ export default function StockOpnameList({ initialOpnames, branches }) {
       setCreateError("Terjadi kesalahan: " + e.message);
     } finally {
       setCreating(false);
+    }
+  }
+
+  // ── Hapus draft ─────────────────────────────────────────────
+
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      const res = await fetch(`/api/stock-opname/${deleteTarget.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const d = await res.json();
+        setDeleteError(d.error || "Gagal menghapus opname");
+        return;
+      }
+      setOpnames((prev) => prev.filter((o) => o.id !== deleteTarget.id));
+      setDeleteTarget(null);
+    } catch (e) {
+      setDeleteError("Terjadi kesalahan: " + e.message);
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -172,12 +199,25 @@ export default function StockOpnameList({ initialOpnames, branches }) {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center whitespace-nowrap">
-                      <button
-                        onClick={() => router.push(`/stock-opname/${o.id}`)}
-                        className="text-blue-600 hover:underline text-xs font-medium cursor-pointer"
-                      >
-                        {o.status === "DRAFT" ? "Lanjutkan" : "Detail"}
-                      </button>
+                      <div className="flex items-center justify-center gap-3">
+                        <button
+                          onClick={() => router.push(`/stock-opname/${o.id}`)}
+                          className="text-blue-600 hover:underline text-xs font-medium cursor-pointer"
+                        >
+                          {o.status === "DRAFT" ? "Lanjutkan" : "Detail"}
+                        </button>
+                        {o.status === "DRAFT" && (
+                          <button
+                            onClick={() => {
+                              setDeleteTarget({ id: o.id, shortId: o.id.slice(-8).toUpperCase() });
+                              setDeleteError("");
+                            }}
+                            className="text-red-500 hover:text-red-700 text-xs font-medium cursor-pointer"
+                          >
+                            Hapus
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -241,6 +281,44 @@ export default function StockOpnameList({ initialOpnames, branches }) {
                 className="flex-1 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition cursor-pointer"
               >
                 {creating ? "Membuat..." : "Mulai Opname"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Hapus Draft */}
+      {deleteTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+          onClick={(e) => { if (e.target === e.currentTarget && !deleting) setDeleteTarget(null); }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="text-center">
+              <span className="text-4xl">🗑️</span>
+              <h2 className="text-lg font-semibold text-gray-900 mt-2">Hapus Draft Opname?</h2>
+            </div>
+            <p className="text-sm text-gray-600 text-center">
+              Sesi opname <strong>#{deleteTarget.shortId}</strong> beserta semua data yang sudah diisi akan dihapus permanen.
+              Tindakan ini <strong>tidak dapat dibatalkan</strong>.
+            </p>
+            {deleteError && (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{deleteError}</p>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => { if (!deleting) setDeleteTarget(null); }}
+                disabled={deleting}
+                className="flex-1 py-2.5 border border-gray-300 text-gray-600 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50 transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition cursor-pointer"
+              >
+                {deleting ? "Menghapus..." : "Ya, Hapus Draft"}
               </button>
             </div>
           </div>

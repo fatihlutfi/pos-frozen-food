@@ -46,10 +46,10 @@ export default async function OpnameDetailPage({ params }) {
     if (missing.length > 0) {
       await prisma.stockOpnameItem.createMany({
         data: missing.map((s) => ({
-          stockOpnameId: opname.id,
-          productId:     s.productId,
-          systemQty:     s.quantity,
-          physicalQty:   null,
+          opnameId:    opname.id,
+          productId:   s.productId,
+          systemQty:   s.quantity,
+          physicalQty: null,
         })),
       });
       autoSyncedCount = missing.length;

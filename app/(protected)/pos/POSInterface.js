@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { signOut } from "next-auth/react";
 import { formatRupiah, formatDateTime } from "@/lib/format";
 import ReceiptModal from "./ReceiptModal";
 import { useOfflineQueue } from "@/lib/useOfflineQueue";
@@ -291,12 +292,8 @@ export default function POSInterface({
       });
       const data = await res.json();
       if (!res.ok) { setShiftError(data.error || "Gagal menutup shift"); return; }
-      setActiveShift(null);
-      setShowCloseShift(false);
-      setClosingBalance("");
-      setClosingNote("");
-      setShiftSummary(null);
-      router.refresh();
+      // Shift berhasil ditutup — logout kasir dan redirect ke login
+      signOut({ callbackUrl: "/login" });
     } catch (e) {
       setShiftError("Terjadi kesalahan: " + e.message);
     } finally {
