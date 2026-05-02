@@ -141,137 +141,170 @@ function sortRows(rows, key, dir) {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 /**
- * ProductListCard
- * Reusable card untuk "Produk Terlaris" dan "Produk Tidak Laris".
- * Mengelola state show-more secara mandiri — setiap instance independen.
+ * ProductListCard — reusable card "Produk Terlaris" / "Produk Tidak Laris"
  *
- * variant="top"    → kolom: #, Produk (+ bar), Qty, Pendapatan, Tren
- * variant="bottom" → kolom: Produk, Qty, Tren, Stok, Status
+ * type="top" → sort qty DESC, kolom: #, Produk+bar, Qty, Pendapatan, Tren
+ * type="low"  → sort qty ASC,  kolom: Produk, Qty, Tren, Stok, Status
+ *
+ * Sorting SELALU terjadi sebelum slicing.
+ * State show-more dikelola lokal — setiap instance independen.
  */
-function ProductListCard({ title, icon, subtitle, data = [], variant, periodInfo }) {
+const INITIAL_LIMIT  = 5;
+const EXPANDED_LIMIT = 15;
+
+const MEDAL = ["🥇", "🥈", "🥉"];
+
+function ProductListCard({ title, icon, subtitle, data = [], type, periodInfo }) {
   const [showMore, setShowMore] = useState(false);
 
-  const COLLAPSED_LIMIT = 5;
-  const EXPANDED_LIMIT  = 15;
-  const displayed  = data.slice(0, showMore ? EXPANDED_LIMIT : COLLAPSED_LIMIT);
-  const hasMore    = data.length > COLLAPSED_LIMIT;
-  const totalShown = Math.min(EXPANDED_LIMIT, data.length);
-  const showTrend  = !!periodInfo;
+  // ── 1. Sort SEBELUM slice (clone agar tidak mutasi prop) ──────────────────
+  const sortedData = useMemo(() => {
+    const clone = [...data];
+    return type === "top"
+      ? clone.sort((a, b) => b.qty - a.qty)   // Terlaris: qty tertinggi duluan
+      : clone.sort((a, b) => a.qty - b.qty);  // Tidak Laris: qty terendah duluan
+  }, [data, type]);
+
+  // ── 2. Slice dari data yang sudah diurutkan ───────────────────────────────
+  const limit        = showMore ? EXPANDED_LIMIT : INITIAL_LIMIT;
+  const visibleItems = sortedData.slice(0, limit);
+
+  // ── 3. Kalkulasi button label ─────────────────────────────────────────────
+  const hasMore     = sortedData.length > INITIAL_LIMIT;
+  const showTrend   = !!periodInfo;
+  // 6–15 item → "Tampilkan semua", >15 → "Tampilkan lebih banyak"
+  const expandLabel = sortedData.length <= EXPANDED_LIMIT
+    ? `Tampilkan semua (${sortedData.length})`
+    : `Tampilkan lebih banyak (${EXPANDED_LIMIT} dari ${sortedData.length})`;
 
   return (
     <div className="print-card bg-white rounded-xl border border-gray-200 overflow-hidden">
-      {/* Header */}
+
+      {/* ── Header ── */}
       <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
         <span className="text-base">{icon}</span>
         <h3 className="font-semibold text-gray-800 text-sm">{title}</h3>
         <span className="text-xs text-gray-400 ml-auto">{subtitle}</span>
       </div>
 
-      {/* Empty state */}
-      {data.length === 0 ? (
+      {/* ── Empty state ── */}
+      {sortedData.length === 0 ? (
         <div className="py-10 text-center text-gray-400 text-sm">
           Belum ada penjualan dalam periode ini
         </div>
       ) : (
         <>
-          {/* Table */}
+          {/* ── Table (hanya visibleItems yang di-render, TIDAK ada hidden rows) ── */}
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  {variant === "top" && (
-                    <th className="text-left px-4 py-2.5 text-gray-500 font-medium text-xs">#</th>
+                  {type === "top" && (
+                    <th className="text-left px-4 py-2.5 text-gray-500 font-medium text-xs w-10">#</th>
                   )}
                   <th className="text-left px-4 py-2.5 text-gray-500 font-medium text-xs">Produk</th>
-                  <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Qty Terjual</th>
+                  <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Qty</th>
                   {showTrend && (
                     <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Tren</th>
                   )}
-                  {variant === "top" && (
+                  {type === "top" && (
                     <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Pendapatan</th>
                   )}
-                  {variant === "bottom" && (
+                  {type === "low" && (
                     <>
-                      <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Stok Saat Ini</th>
+                      <th className="text-right px-4 py-2.5 text-gray-500 font-medium text-xs">Stok</th>
                       <th className="px-4 py-2.5 text-gray-500 font-medium text-xs">Status</th>
                     </>
                   )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {displayed.map((p, i) => (
-                  <tr key={p.name} className="hover:bg-gray-50">
-                    {/* Rank — top only */}
-                    {variant === "top" && (
-                      <td className="px-4 py-3 text-xs font-bold text-amber-500">{i + 1}</td>
-                    )}
+                {visibleItems.map((p, i) => {
+                  const rank       = i + 1;
+                  const isTopThree = type === "top" && rank <= 3;
+                  // Bar width relatif terhadap produk terlaris (index 0 setelah sort)
+                  const barPct = sortedData[0]?.qty > 0
+                    ? Math.max(4, Math.round((p.qty / sortedData[0].qty) * 100))
+                    : 4;
 
-                    {/* Produk cell */}
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-gray-800 text-sm">{p.name}</p>
-                      {variant === "top" && (
-                        <div className="mt-1 w-full bg-gray-100 rounded-full h-1.5">
-                          <div
-                            className="bg-amber-400 h-1.5 rounded-full"
-                            style={{
-                              width: `${Math.round((p.qty / (data[0]?.qty || 1)) * 100)}%`,
-                            }}
-                          />
-                        </div>
-                      )}
-                      {variant === "bottom" && (
-                        <p className="text-xs text-gray-400">{formatRupiah(p.revenue)}</p>
-                      )}
-                    </td>
-
-                    {/* Qty */}
-                    <td className={`px-4 py-3 text-right font-bold ${variant === "top" ? "text-gray-900" : "text-gray-700"}`}>
-                      {p.qty}
-                    </td>
-
-                    {/* Tren */}
-                    {showTrend && (
-                      <td className="px-4 py-3 text-right">
-                        <TrendBadge trend={p.trend} />
-                      </td>
-                    )}
-
-                    {/* Pendapatan — top only */}
-                    {variant === "top" && (
-                      <td className="px-4 py-3 text-right font-semibold text-green-600 whitespace-nowrap text-xs">
-                        {formatRupiah(p.revenue)}
-                      </td>
-                    )}
-
-                    {/* Stok + Status — bottom only */}
-                    {variant === "bottom" && (
-                      <>
-                        <td className="px-4 py-3 text-right text-gray-600">{p.currentStock}</td>
-                        <td className="px-4 py-3">
-                          {p.needsPromo && (
-                            <span className="inline-block bg-orange-100 text-orange-700 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">
-                              Perlu Promo
-                            </span>
-                          )}
+                  return (
+                    <tr
+                      key={p.name}
+                      className={`transition-colors ${isTopThree ? "bg-amber-50/40 hover:bg-amber-50/60" : "hover:bg-gray-50"}`}
+                    >
+                      {/* Rank dengan medal untuk top 3 */}
+                      {type === "top" && (
+                        <td className="px-4 py-3 text-center">
+                          {rank <= 3
+                            ? <span className="text-base leading-none">{MEDAL[rank - 1]}</span>
+                            : <span className="text-xs font-bold text-gray-300">{rank}</span>
+                          }
                         </td>
-                      </>
-                    )}
-                  </tr>
-                ))}
+                      )}
+
+                      {/* Produk */}
+                      <td className="px-4 py-3">
+                        <p className={`font-medium text-sm ${isTopThree ? "text-gray-900" : "text-gray-800"}`}>
+                          {p.name}
+                        </p>
+                        {type === "top" && (
+                          <div className="mt-1.5 w-full bg-gray-100 rounded-full h-1">
+                            <div
+                              className="bg-amber-400 h-1 rounded-full transition-all"
+                              style={{ width: `${barPct}%` }}
+                            />
+                          </div>
+                        )}
+                        {type === "low" && (
+                          <p className="text-xs text-gray-400 mt-0.5">{formatRupiah(p.revenue)}</p>
+                        )}
+                      </td>
+
+                      {/* Qty */}
+                      <td className="px-4 py-3 text-right font-bold text-gray-900">{p.qty}</td>
+
+                      {/* Tren */}
+                      {showTrend && (
+                        <td className="px-4 py-3 text-right">
+                          <TrendBadge trend={p.trend} />
+                        </td>
+                      )}
+
+                      {/* Pendapatan — top only */}
+                      {type === "top" && (
+                        <td className="px-4 py-3 text-right font-semibold text-green-600 whitespace-nowrap text-xs">
+                          {formatRupiah(p.revenue)}
+                        </td>
+                      )}
+
+                      {/* Stok + Status — low only */}
+                      {type === "low" && (
+                        <>
+                          <td className="px-4 py-3 text-right text-gray-600">{p.currentStock}</td>
+                          <td className="px-4 py-3">
+                            {p.needsPromo && (
+                              <span className="inline-block bg-orange-100 text-orange-700 text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap">
+                                Perlu Promo
+                              </span>
+                            )}
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
-          {/* Show more / less button */}
+          {/* ── Show more / less — hanya muncul jika data > INITIAL_LIMIT ── */}
           {hasMore && (
-            <div className="px-5 py-3 border-t border-gray-100 no-print text-center">
+            <div className="px-5 py-3 border-t border-gray-100 no-print flex justify-center">
               <button
                 onClick={() => setShowMore((v) => !v)}
                 className="text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
               >
-                {showMore
-                  ? "Tampilkan lebih sedikit"
-                  : `Tampilkan lebih banyak (${totalShown} dari ${data.length})`}
+                {showMore ? "Tampilkan lebih sedikit" : expandLabel}
               </button>
             </div>
           )}
@@ -741,7 +774,7 @@ export default function ReportView({ isAdmin, branches, defaultBranchId, default
                     icon="🏆"
                     subtitle="by qty terjual"
                     data={report.productAnalysis.topByQty}
-                    variant="top"
+                    type="top"
                     periodInfo={report.periodInfo}
                   />
                   <ProductListCard
@@ -749,7 +782,7 @@ export default function ReportView({ isAdmin, branches, defaultBranchId, default
                     icon="📉"
                     subtitle="qty terjual paling sedikit"
                     data={report.productAnalysis.bottomByQty}
-                    variant="bottom"
+                    type="low"
                     periodInfo={report.periodInfo}
                   />
                 </div>

@@ -7,17 +7,17 @@ import { signOut } from "next-auth/react";
 import { TrendingUp, ClipboardList } from "lucide-react";
 
 const navAdmin = [
-  { href: "/dashboard",      label: "Dashboard",       icon: "▦",  lucide: null },
-  { href: "/pos",            label: "Kasir (POS)",      icon: "🛒", lucide: null },
-  { href: "/shifts",         label: "Shift Kasir",      icon: "🕐", lucide: null },
-  { href: "/products",       label: "Produk",           icon: "📦", lucide: null },
-  { href: "/categories",     label: "Kategori",         icon: "🗂", lucide: null },
-  { href: "/promo",          label: "Promo",            icon: "🔥", lucide: null },
-  { href: "/transactions",   label: "Transaksi",        icon: "📋", lucide: null },
-  { href: "/reports",        label: "Laporan",          icon: null, lucide: TrendingUp },
-  { href: "/stock-opname",   label: "Stock Opname",     icon: null, lucide: ClipboardList },
-  { href: "/admin/branches", label: "Cabang",           icon: "🏪", lucide: null },
-  { href: "/admin/users",    label: "Manajemen User",   icon: "👥", lucide: null },
+  { href: "/dashboard",      label: "Dashboard",      icon: "▦",  lucide: null },
+  { href: "/pos",            label: "Kasir (POS)",     icon: "🛒", lucide: null },
+  { href: "/shifts",         label: "Shift Kasir",     icon: "🕐", lucide: null },
+  { href: "/products",       label: "Produk",          icon: "📦", lucide: null },
+  { href: "/categories",     label: "Kategori",        icon: "🗂", lucide: null },
+  { href: "/promo",          label: "Promo",           icon: "🔥", lucide: null },
+  { href: "/transactions",   label: "Transaksi",       icon: "📋", lucide: null },
+  { href: "/reports",        label: "Laporan",         icon: null, lucide: TrendingUp },
+  { href: "/stock-opname",   label: "Stock Opname",    icon: null, lucide: ClipboardList },
+  { href: "/admin/branches", label: "Cabang",          icon: "🏪", lucide: null },
+  { href: "/admin/users",    label: "Manajemen User",  icon: "👥", lucide: null },
 ];
 
 const navKasir = [
@@ -27,10 +27,15 @@ const navKasir = [
   { href: "/transactions", label: "Transaksi Saya", icon: "📋", lucide: null },
 ];
 
-export default function Sidebar({ role, userName, branchName, isOpen, onClose }) {
-  const pathname  = usePathname();
-  const router    = useRouter();
-  const navItems  = role === "ADMIN" ? navAdmin : navKasir;
+/**
+ * Sidebar — hanya bertanggung jawab atas KONTEN.
+ * Positioning (fixed overlay vs static) ditangani oleh AppShell.
+ * Prop `onClose` dipanggil saat link diklik atau tombol ✕ ditekan.
+ */
+export default function Sidebar({ role, userName, branchName, onClose }) {
+  const pathname = usePathname();
+  const router   = useRouter();
+  const navItems = role === "ADMIN" ? navAdmin : navKasir;
 
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [checkingShift,  setCheckingShift]  = useState(false);
@@ -40,6 +45,7 @@ export default function Sidebar({ role, userName, branchName, isOpen, onClose })
       signOut({ callbackUrl: "/login" });
       return;
     }
+    // Kasir: cek apakah ada shift aktif sebelum keluar
     setCheckingShift(true);
     try {
       const res  = await fetch("/api/shifts?status=OPEN&limit=1");
@@ -65,49 +71,20 @@ export default function Sidebar({ role, userName, branchName, isOpen, onClose })
   return (
     <>
       {/*
-        Backdrop — hanya muncul di mobile saat drawer terbuka.
-        lg:hidden memastikan tidak muncul di desktop.
+        aside mengisi 100% tinggi dan lebar container-nya.
+        Di mobile: container = fixed drawer panel di AppShell (w-[75%])
+        Di desktop: container = wrapper div di AppShell (w-64)
       */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
-          onClick={onClose}
-          aria-hidden="true"
-        />
-      )}
+      <aside className="h-full w-full bg-slate-900 text-white flex flex-col">
 
-      {/*
-        Sidebar panel
-        ─────────────────────────────────────────────
-        Mobile  : fixed overlay, slide dari kiri
-                  - Tersembunyi : -translate-x-full
-                  - Terbuka     : translate-x-0
-                  - Lebar       : 75% layar, max 280px
-        Desktop : static, selalu visible, lebar 100%
-                  dari wrapper div (w-64) di AppShell
-        ─────────────────────────────────────────────
-      */}
-      <aside
-        className={[
-          // Base — layout & warna
-          "flex flex-col bg-slate-900 text-white",
-          // Mobile: fixed overlay dengan animasi slide
-          "fixed inset-y-0 left-0 z-40 w-[75%] max-w-[280px]",
-          "transition-transform duration-300 ease-in-out",
-          isOpen ? "translate-x-0" : "-translate-x-full",
-          // Desktop: kembali ke flow normal, override semua mobile override
-          "lg:static lg:inset-auto lg:z-auto lg:w-full lg:h-full",
-          "lg:translate-x-0",
-        ].join(" ")}
-      >
-        {/* Logo + tombol tutup (close button hanya di mobile) */}
+        {/* Logo + tombol tutup (tutup hanya dirender di mobile via lg:hidden) */}
         <div className="flex items-center gap-3 px-5 py-5 border-b border-slate-700 shrink-0">
           <span className="text-2xl">🧊</span>
           <div className="flex-1 min-w-0">
             <p className="font-bold text-sm leading-tight">POS Frozen Food</p>
             <p className="text-slate-400 text-xs">Multi-Cabang</p>
           </div>
-          {/* Tombol ✕ — hanya di mobile */}
+          {/* ✕ hanya muncul di mobile */}
           <button
             onClick={onClose}
             className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition cursor-pointer shrink-0"
@@ -119,7 +96,7 @@ export default function Sidebar({ role, userName, branchName, isOpen, onClose })
           </button>
         </div>
 
-        {/* User info */}
+        {/* Info pengguna */}
         <div className="px-5 py-4 border-b border-slate-700 shrink-0">
           <p className="text-xs text-slate-400 mb-0.5">Login sebagai</p>
           <p className="text-sm font-semibold truncate">{userName}</p>
@@ -139,7 +116,7 @@ export default function Sidebar({ role, userName, branchName, isOpen, onClose })
           </div>
         </div>
 
-        {/* Nav links */}
+        {/* Navigasi — scrollable */}
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
           {navItems.map((item) => {
             const isActive =
@@ -152,15 +129,13 @@ export default function Sidebar({ role, userName, branchName, isOpen, onClose })
               <Link
                 key={item.href}
                 href={item.href}
-                onClick={onClose}
-                className={`
-                  flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-                  ${
-                    isActive
-                      ? "bg-blue-600 text-white"
-                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                  }
-                `}
+                onClick={onClose} // tutup drawer saat navigasi (no-op di desktop)
+                className={[
+                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-blue-600 text-white"
+                    : "text-slate-300 hover:bg-slate-800 hover:text-white",
+                ].join(" ")}
               >
                 <span className="w-5 flex items-center justify-center shrink-0">
                   {LucideIcon
@@ -174,7 +149,7 @@ export default function Sidebar({ role, userName, branchName, isOpen, onClose })
           })}
         </nav>
 
-        {/* Logout */}
+        {/* Tombol keluar */}
         <div className="px-3 py-4 border-t border-slate-700 shrink-0">
           <button
             onClick={handleLogout}
@@ -194,7 +169,7 @@ export default function Sidebar({ role, userName, branchName, isOpen, onClose })
         </div>
       </aside>
 
-      {/* Modal: shift aktif saat logout */}
+      {/* Modal: shift masih aktif saat hendak logout */}
       {showShiftModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
@@ -203,7 +178,7 @@ export default function Sidebar({ role, userName, branchName, isOpen, onClose })
               <h3 className="text-base font-bold text-gray-800">Shift Masih Aktif</h3>
             </div>
             <p className="text-sm text-gray-600 mb-6">
-              Anda masih memiliki shift yang sedang berjalan. Tutup shift terlebih dahulu sebelum keluar agar catatan kasir tersimpan dengan benar.
+              Anda masih memiliki shift yang sedang berjalan. Tutup shift terlebih dahulu agar catatan kasir tersimpan dengan benar.
             </p>
             <div className="flex flex-col gap-2">
               <button
@@ -213,10 +188,7 @@ export default function Sidebar({ role, userName, branchName, isOpen, onClose })
                 Tutup Shift Sekarang
               </button>
               <button
-                onClick={() => {
-                  setShowShiftModal(false);
-                  signOut({ callbackUrl: "/login" });
-                }}
+                onClick={() => { setShowShiftModal(false); signOut({ callbackUrl: "/login" }); }}
                 className="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-600 font-semibold rounded-lg text-sm transition cursor-pointer"
               >
                 Keluar Tanpa Menutup Shift
