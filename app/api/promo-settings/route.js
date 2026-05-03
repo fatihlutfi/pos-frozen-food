@@ -2,6 +2,18 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
+const PromoSettingsSchema = z.object({
+  criticalDays:     z.number().int().min(1),
+  warningDays:      z.number().int().min(1),
+  criticalDiscount: z.number().min(0).max(100),
+  warningDiscount:  z.number().min(0).max(100),
+  isActive:         z.boolean().optional(),
+}).refine(data => data.criticalDays < data.warningDays, {
+  message: "Hari kritis harus lebih kecil dari hari warning",
+  path: ["criticalDays"],
+});
 
 const SINGLETON_ID = "singleton";
 
@@ -39,28 +51,34 @@ export async function PUT(req) {
   }
 
   try {
-    const { criticalDays, warningDays, criticalDiscount, warningDiscount, isActive } = await req.json();
-
-    if (criticalDays < 1 || warningDays < 1 || criticalDays >= warningDays)
-      return NextResponse.json({ error: "Hari kritis harus lebih kecil dari hari warning" }, { status: 400 });
-    if (criticalDiscount < 0 || criticalDiscount > 100 || warningDiscount < 0 || warningDiscount > 100)
-      return NextResponse.json({ error: "Diskon harus antara 0-100%" }, { status: 400 });
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Request body tidak valid" }, { status: 400 });
+    }
+    const parsed = PromoSettingsSchema.safeParse(body);
+    if (!parsed.success) {
+      const details = parsed.error.issues.map((i) =>
+        i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message
+      );
+      return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
+    }
+    const { criticalDays, warningDays, criticalDiscount, warningDiscount, isActive } = parsed.data;
 
     const settings = await prisma.promoExpirySettings.upsert({
       where:  { id: SINGLETON_ID },
       update: {
-        criticalDays:     parseInt(criticalDays),
-        warningDays:      parseInt(warningDays),
-        criticalDiscount: parseFloat(criticalDiscount),
-        warningDiscount:  parseFloat(warningDiscount),
-        isActive:         isActive ?? true,
+        criticalDays,
+        warningDays,
+        criticalDiscount,
+        warningDiscount,
+        isActive: isActive ?? true,
       },
       create: {
         id:               SINGLETON_ID,
-        criticalDays:     parseInt(criticalDays),
-        warningDays:      parseInt(warningDays),
-        criticalDiscount: parseFloat(criticalDiscount),
-        warningDiscount:  parseFloat(warningDiscount),
+        criticalDays,
+        warningDays,
+        criticalDiscount,
+        warningDiscount,
         isActive:         isActive ?? true,
       },
     });

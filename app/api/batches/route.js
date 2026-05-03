@@ -2,6 +2,16 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
+const CreateBatchSchema = z.object({
+  productId:      z.string().min(1),
+  branchId:       z.string().min(1),
+  batchCode:      z.string().min(1).max(100),
+  productionDate: z.string().optional(),
+  expiryDate:     z.string().min(1),
+  quantity:       z.number().int().positive().max(999999),
+});
 
 // Helper: hitung expiry status dari expiryDate
 export function getExpiryStatus(expiryDate) {
@@ -63,17 +73,23 @@ export async function POST(req) {
   }
 
   try {
-    const { productId, branchId, batchCode, productionDate, expiryDate, quantity } = await req.json();
-
-    if (!productId)   return NextResponse.json({ error: "productId wajib diisi" }, { status: 400 });
-    if (!branchId)    return NextResponse.json({ error: "branchId wajib diisi" }, { status: 400 });
-    if (!batchCode?.trim()) return NextResponse.json({ error: "Kode batch wajib diisi" }, { status: 400 });
-    if (!expiryDate)  return NextResponse.json({ error: "Tanggal expired wajib diisi" }, { status: 400 });
-    if (!quantity || parseInt(quantity) <= 0) {
-      return NextResponse.json({ error: "Quantity harus lebih dari 0" }, { status: 400 });
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Request body tidak valid" }, { status: 400 });
+    }
+    const parsed = CreateBatchSchema.safeParse({
+      ...body,
+      quantity: typeof body.quantity === "string" ? parseInt(body.quantity) : body.quantity,
+    });
+    if (!parsed.success) {
+      const details = parsed.error.issues.map((i) =>
+        i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message
+      );
+      return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
     }
 
-    const qty = parseInt(quantity);
+    const { productId, branchId, batchCode, productionDate, expiryDate, quantity } = parsed.data;
+    const qty = quantity;
 
     // Baca stok sebelum increment untuk noteBefore yang akurat
     const stockBefore = await prisma.stock.findUnique({

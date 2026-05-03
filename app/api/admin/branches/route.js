@@ -2,6 +2,14 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { auditLog } from "@/lib/audit";
+
+const CreateBranchSchema = z.object({
+  name:    z.string().min(1).max(100),
+  address: z.string().max(300).optional(),
+  phone:   z.string().max(20).optional(),
+});
 
 function adminOnly(session) {
   if (!session || session.user.role !== "ADMIN") {
@@ -33,11 +41,18 @@ export async function POST(req) {
   if (guard) return guard;
 
   try {
-    const { name, address, phone } = await req.json();
-
-    if (!name?.trim()) {
-      return NextResponse.json({ error: "Nama cabang wajib diisi" }, { status: 400 });
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Request body tidak valid" }, { status: 400 });
     }
+    const parsed = CreateBranchSchema.safeParse(body);
+    if (!parsed.success) {
+      const details = parsed.error.issues.map((i) =>
+        i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message
+      );
+      return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
+    }
+    const { name, address, phone } = parsed.data;
 
     const existing = await prisma.branch.findUnique({ where: { name: name.trim() } });
     if (existing) {
@@ -83,6 +98,13 @@ export async function POST(req) {
         })),
       });
     }
+
+    auditLog("CREATE", "branch", {
+      actorId:    session.user.id,
+      actorEmail: session.user.email,
+      targetId:   branch.id,
+      meta: { name: branch.name },
+    });
 
     return NextResponse.json(branch, { status: 201 });
   } catch (e) {

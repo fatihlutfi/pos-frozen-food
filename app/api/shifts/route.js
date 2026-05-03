@@ -2,6 +2,12 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
+const CreateShiftSchema = z.object({
+  openingBalance: z.number().int().nonnegative().optional(),
+  branchId:       z.string().min(1).optional(),
+});
 
 // GET /api/shifts — list shift
 // Admin: semua shift (filter by branchId, status)
@@ -14,22 +20,29 @@ export async function GET(req) {
   const isAdmin = session.user.role === "ADMIN";
   const statusFilter = searchParams.get("status") || undefined;
   const branchFilter = isAdmin ? searchParams.get("branchId") || undefined : session.user.branchId;
-  const limit = parseInt(searchParams.get("limit") || "50");
+  const limit  = Math.min(parseInt(searchParams.get("limit")  || "50"), 200);
+  const offset = Math.max(parseInt(searchParams.get("offset") || "0"),  0);
 
-  const shifts = await prisma.cashierShift.findMany({
-    where: {
-      ...(isAdmin ? {} : { userId: session.user.id }),
-      ...(branchFilter ? { branchId: branchFilter } : {}),
-      ...(statusFilter ? { status: statusFilter } : {}),
-    },
-    include: {
-      user:   { select: { name: true } },
-      branch: { select: { name: true } },
-      _count: { select: { transactions: true } },
-    },
-    orderBy: { openedAt: "desc" },
-    take: limit,
-  });
+  const where = {
+    ...(isAdmin ? {} : { userId: session.user.id }),
+    ...(branchFilter ? { branchId: branchFilter } : {}),
+    ...(statusFilter ? { status: statusFilter } : {}),
+  };
+
+  const [shifts, total] = await Promise.all([
+    prisma.cashierShift.findMany({
+      where,
+      include: {
+        user:   { select: { name: true } },
+        branch: { select: { name: true } },
+        _count: { select: { transactions: true } },
+      },
+      orderBy: { openedAt: "desc" },
+      take:  limit,
+      skip:  offset,
+    }),
+    prisma.cashierShift.count({ where }),
+  ]);
 
   // Hitung total revenue per shift dari transaksi COMPLETED
   const shiftIds = shifts.map((s) => s.id);
@@ -49,7 +62,14 @@ export async function GET(req) {
       ...s,
       totalRevenue: revenueMap[s.id]?.total ?? 0,
       totalTx: revenueMap[s.id]?.count ?? 0,
-    }))
+    })),
+    {
+      headers: {
+        "X-Total-Count": String(total),
+        "X-Limit":       String(limit),
+        "X-Offset":      String(offset),
+      },
+    }
   );
 }
 
@@ -60,21 +80,32 @@ export async function POST(req) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Request body tidak valid" }, { status: 400 });
+    }
+    const parsed = CreateShiftSchema.safeParse({
+      ...body,
+      openingBalance: typeof body.openingBalance === "string" ? parseInt(body.openingBalance) : body.openingBalance,
+    });
+    if (!parsed.success) {
+      const details = parsed.error.issues.map((i) =>
+        i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message
+      );
+      return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
+    }
+
     const isAdmin = session.user.role === "ADMIN";
 
     const branchId = isAdmin
-      ? (body.branchId || session.user.branchId)
+      ? (parsed.data.branchId || session.user.branchId)
       : session.user.branchId;
 
     if (!branchId) {
       return NextResponse.json({ error: "Cabang wajib dipilih" }, { status: 400 });
     }
 
-    const openingBalance = parseInt(body.openingBalance) ?? 0;
-    if (isNaN(openingBalance) || openingBalance < 0) {
-      return NextResponse.json({ error: "Modal awal tidak valid" }, { status: 400 });
-    }
+    const openingBalance = parsed.data.openingBalance ?? 0;
 
     // Cek apakah user sudah punya shift OPEN di cabang ini
     const existing = await prisma.cashierShift.findFirst({

@@ -19,23 +19,36 @@ export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const status   = searchParams.get("status")   || undefined;
   const branchId = searchParams.get("branchId") || undefined;
-  const limit    = parseInt(searchParams.get("limit") || "50");
+  const limit    = Math.min(parseInt(searchParams.get("limit")  || "50"), 200);
+  const offset   = Math.max(parseInt(searchParams.get("offset") || "0"),  0);
 
-  const opnames = await prisma.stockOpname.findMany({
-    where: {
-      ...(status   && { status }),
-      ...(branchId && { branchId }),
+  const where = {
+    ...(status   && { status }),
+    ...(branchId && { branchId }),
+  };
+
+  const [opnames, total] = await Promise.all([
+    prisma.stockOpname.findMany({
+      where,
+      include: {
+        branch: { select: { name: true } },
+        user:   { select: { name: true } },
+        _count: { select: { items: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take:  limit,
+      skip:  offset,
+    }),
+    prisma.stockOpname.count({ where }),
+  ]);
+
+  return NextResponse.json(opnames, {
+    headers: {
+      "X-Total-Count": String(total),
+      "X-Limit":       String(limit),
+      "X-Offset":      String(offset),
     },
-    include: {
-      branch: { select: { name: true } },
-      user:   { select: { name: true } },
-      _count: { select: { items: true } },
-    },
-    orderBy: { createdAt: "desc" },
-    take: limit,
   });
-
-  return NextResponse.json(opnames);
 }
 
 // POST /api/stock-opname — buat sesi opname baru (admin only)

@@ -2,6 +2,16 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
+const UpdateProductSchema = z.object({
+  name:        z.string().min(1).max(200),
+  description: z.string().max(1000).optional(),
+  price:       z.number().int().positive(),
+  costPrice:   z.number().int().nonnegative().optional(),
+  categoryId:  z.string().min(1).optional(),
+  isActive:    z.boolean().optional(),
+});
 
 export async function PUT(req, { params }) {
   const session = await getServerSession(authOptions);
@@ -11,20 +21,31 @@ export async function PUT(req, { params }) {
 
   try {
     const { id } = await params;
-    const { name, description, price, costPrice, categoryId, isActive } = await req.json();
-
-    if (!name?.trim()) return NextResponse.json({ error: "Nama produk wajib diisi" }, { status: 400 });
-    if (!price || price <= 0) return NextResponse.json({ error: "Harga jual tidak valid" }, { status: 400 });
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Request body tidak valid" }, { status: 400 });
+    }
+    const parsed = UpdateProductSchema.safeParse({
+      ...body,
+      price:     typeof body.price     === "string" ? parseInt(body.price)     : body.price,
+      costPrice: typeof body.costPrice === "string" ? parseInt(body.costPrice) : body.costPrice,
+    });
+    if (!parsed.success) {
+      const details = parsed.error.issues.map((i) =>
+        i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message
+      );
+      return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
+    }
 
     const product = await prisma.product.update({
       where: { id },
       data: {
-        name: name.trim(),
-        description: description?.trim() || null,
-        price:       parseInt(price),
-        costPrice:   parseInt(costPrice) || 0,
-        categoryId,
-        isActive:    isActive ?? true,
+        name:        parsed.data.name.trim(),
+        description: parsed.data.description?.trim() || null,
+        price:       parsed.data.price,
+        costPrice:   parsed.data.costPrice ?? 0,
+        categoryId:  parsed.data.categoryId,
+        isActive:    parsed.data.isActive ?? true,
       },
       include: {
         category: true,

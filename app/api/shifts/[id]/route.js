@@ -2,6 +2,12 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
+const CloseShiftSchema = z.object({
+  closingBalance: z.number().int().nonnegative(),
+  note:           z.string().max(500).optional(),
+});
 
 // GET /api/shifts/[id] — detail shift + ringkasan transaksi
 export async function GET(req, { params }) {
@@ -78,7 +84,20 @@ export async function PATCH(req, { params }) {
   const isAdmin = session.user.role === "ADMIN";
 
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Request body tidak valid" }, { status: 400 });
+    }
+    const parsed = CloseShiftSchema.safeParse({
+      ...body,
+      closingBalance: typeof body.closingBalance === "string" ? parseInt(body.closingBalance) : body.closingBalance,
+    });
+    if (!parsed.success) {
+      const details = parsed.error.issues.map((i) =>
+        i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message
+      );
+      return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
+    }
 
     const shift = await prisma.cashierShift.findUnique({ where: { id } });
     if (!shift) return NextResponse.json({ error: "Shift tidak ditemukan" }, { status: 404 });
@@ -92,17 +111,12 @@ export async function PATCH(req, { params }) {
       return NextResponse.json({ error: "Shift sudah ditutup" }, { status: 400 });
     }
 
-    const closingBalance = parseInt(body.closingBalance);
-    if (isNaN(closingBalance) || closingBalance < 0) {
-      return NextResponse.json({ error: "Kas akhir tidak valid" }, { status: 400 });
-    }
-
     const updated = await prisma.cashierShift.update({
       where: { id },
       data: {
         status:         "CLOSED",
-        closingBalance,
-        note:           body.note?.trim() || null,
+        closingBalance: parsed.data.closingBalance,
+        note:           parsed.data.note?.trim() || null,
         closedAt:       new Date(),
       },
       include: {

@@ -2,6 +2,22 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
+const BundleItemSchema = z.object({
+  productId: z.string().min(1),
+  quantity:  z.number().int().positive().optional(),
+});
+
+const CreateBundleSchema = z.object({
+  name:        z.string().min(1).max(200),
+  bundlePrice: z.number().int().positive(),
+  branchId:    z.string().min(1).optional(),
+  startDate:   z.string().optional(),
+  endDate:     z.string().optional(),
+  isActive:    z.boolean().optional(),
+  items:       z.array(BundleItemSchema).min(2).max(50),
+});
 
 // GET /api/bundles?branchId=&activeOnly=true
 export async function GET(req) {
@@ -61,18 +77,26 @@ export async function POST(req) {
   }
 
   try {
-    const { name, bundlePrice, branchId, startDate, endDate, isActive, items } = await req.json();
-
-    if (!name?.trim())   return NextResponse.json({ error: "Nama paket wajib diisi" }, { status: 400 });
-    if (!bundlePrice || parseInt(bundlePrice) <= 0)
-      return NextResponse.json({ error: "Harga bundling harus lebih dari 0" }, { status: 400 });
-    if (!items || items.length < 2)
-      return NextResponse.json({ error: "Bundling harus memiliki minimal 2 produk" }, { status: 400 });
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Request body tidak valid" }, { status: 400 });
+    }
+    const parsed = CreateBundleSchema.safeParse({
+      ...body,
+      bundlePrice: typeof body.bundlePrice === "string" ? parseInt(body.bundlePrice) : body.bundlePrice,
+    });
+    if (!parsed.success) {
+      const details = parsed.error.issues.map((i) =>
+        i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message
+      );
+      return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
+    }
+    const { name, bundlePrice, branchId, startDate, endDate, isActive, items } = parsed.data;
 
     const bundle = await prisma.bundle.create({
       data: {
         name:        name.trim(),
-        bundlePrice: parseInt(bundlePrice),
+        bundlePrice: bundlePrice,
         branchId:    branchId || null,
         startDate:   startDate ? new Date(startDate) : null,
         endDate:     endDate   ? new Date(endDate)   : null,
@@ -80,7 +104,7 @@ export async function POST(req) {
         items: {
           create: items.map((item) => ({
             productId: item.productId,
-            quantity:  parseInt(item.quantity) || 1,
+            quantity:  item.quantity || 1,
           })),
         },
       },

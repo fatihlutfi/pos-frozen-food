@@ -3,6 +3,20 @@ import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+import { auditLog } from "@/lib/audit";
+
+const ResetPasswordSchema = z.object({
+  newPassword: z.string().min(6).max(100),
+});
+
+const EditUserSchema = z.object({
+  name:     z.string().min(1).max(100).optional(),
+  email:    z.string().email().max(200).optional(),
+  role:     z.enum(["ADMIN", "KASIR"]).optional(),
+  branchId: z.string().min(1).nullable().optional(),
+  isActive: z.boolean().optional(),
+});
 
 function adminOnly(session) {
   if (!session || session.user.role !== "ADMIN") {
@@ -17,7 +31,10 @@ export async function PATCH(req, { params }) {
   if (guard) return guard;
 
   const { id } = await params;
-  const body = await req.json();
+  const body = await req.json().catch(() => null);
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "Request body tidak valid" }, { status: 400 });
+  }
 
   try {
     const user = await prisma.user.findUnique({ where: { id } });
@@ -25,16 +42,32 @@ export async function PATCH(req, { params }) {
 
     // Mode reset password
     if (body.newPassword !== undefined) {
-      if (body.newPassword.length < 6) {
-        return NextResponse.json({ error: "Password minimal 6 karakter" }, { status: 400 });
+      const parsed = ResetPasswordSchema.safeParse(body);
+      if (!parsed.success) {
+        const details = parsed.error.issues.map((i) =>
+          i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message
+        );
+        return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
       }
-      const hashed = await bcrypt.hash(body.newPassword, 10);
+      const hashed = await bcrypt.hash(parsed.data.newPassword, 10);
       await prisma.user.update({ where: { id }, data: { password: hashed } });
+      auditLog("RESET_PASSWORD", "user", {
+        actorId:    session.user.id,
+        actorEmail: session.user.email,
+        targetId:   id,
+      });
       return NextResponse.json({ message: "Password berhasil direset" });
     }
 
     // Mode edit data
-    const { name, email, role, branchId, isActive } = body;
+    const parsed = EditUserSchema.safeParse(body);
+    if (!parsed.success) {
+      const details = parsed.error.issues.map((i) =>
+        i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message
+      );
+      return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
+    }
+    const { name, email, role, branchId, isActive } = parsed.data;
 
     // Cegah admin menonaktifkan atau mengubah role dirinya sendiri
     if (id === session.user.id) {
@@ -44,10 +77,6 @@ export async function PATCH(req, { params }) {
       if (role && role !== session.user.role) {
         return NextResponse.json({ error: "Tidak bisa mengubah role akun sendiri" }, { status: 400 });
       }
-    }
-
-    if (role && !["ADMIN", "KASIR"].includes(role)) {
-      return NextResponse.json({ error: "Role tidak valid" }, { status: 400 });
     }
 
     const effectiveRole = role ?? user.role;
@@ -80,6 +109,13 @@ export async function PATCH(req, { params }) {
         isActive: true, createdAt: true, branchId: true,
         branch: { select: { name: true } },
       },
+    });
+
+    auditLog("UPDATE", "user", {
+      actorId:    session.user.id,
+      actorEmail: session.user.email,
+      targetId:   id,
+      meta: { fields: Object.keys(data) },
     });
 
     return NextResponse.json(updated);
@@ -116,6 +152,12 @@ export async function DELETE(req, { params }) {
     }
 
     await prisma.user.delete({ where: { id } });
+    auditLog("DELETE", "user", {
+      actorId:    session.user.id,
+      actorEmail: session.user.email,
+      targetId:   id,
+      meta: { name: user.name, email: user.email },
+    });
     return NextResponse.json({ message: "User berhasil dihapus" });
   } catch (e) {
     console.error("[DELETE /api/admin/users/[id]]", e);

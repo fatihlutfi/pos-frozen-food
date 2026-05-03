@@ -37,7 +37,8 @@ export async function GET(req) {
   const status   = searchParams.get("status")   || undefined;
   const dateFrom = searchParams.get("dateFrom");
   const dateTo   = searchParams.get("dateTo");
-  const limit    = parseInt(searchParams.get("limit") || "100");
+  const limit    = Math.min(parseInt(searchParams.get("limit")  || "50"), 200);
+  const offset   = Math.max(parseInt(searchParams.get("offset") || "0"),  0);
 
   const where = {
     ...(branchId ? { branchId } : {}),
@@ -50,18 +51,28 @@ export async function GET(req) {
     } : {}),
   };
 
-  const transactions = await prisma.transaction.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    take: limit,
-    include: {
-      items: { include: { product: { select: { name: true } } } },
-      branch: { select: { name: true, address: true } },
-      user:   { select: { name: true } },
+  const [transactions, total] = await Promise.all([
+    prisma.transaction.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take:  limit,
+      skip:  offset,
+      include: {
+        items: { include: { product: { select: { name: true } } } },
+        branch: { select: { name: true, address: true } },
+        user:   { select: { name: true } },
+      },
+    }),
+    prisma.transaction.count({ where }),
+  ]);
+
+  return NextResponse.json(transactions, {
+    headers: {
+      "X-Total-Count": String(total),
+      "X-Limit":       String(limit),
+      "X-Offset":      String(offset),
     },
   });
-
-  return NextResponse.json(transactions);
 }
 
 // POST /api/transactions — buat transaksi baru (atomic, retry on invoice collision)

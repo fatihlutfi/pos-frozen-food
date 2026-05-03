@@ -2,6 +2,11 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
+const UpdateCategorySchema = z.object({
+  name: z.string().min(1).max(100),
+});
 
 export async function PUT(req, { params }) {
   const session = await getServerSession(authOptions);
@@ -10,15 +15,22 @@ export async function PUT(req, { params }) {
   }
 
   try {
-    const { name } = await req.json();
-    if (!name?.trim()) {
-      return NextResponse.json({ error: "Nama kategori wajib diisi" }, { status: 400 });
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Request body tidak valid" }, { status: 400 });
+    }
+    const parsed = UpdateCategorySchema.safeParse(body);
+    if (!parsed.success) {
+      const details = parsed.error.issues.map((i) =>
+        i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message
+      );
+      return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
     }
 
     const { id } = await params;
     const category = await prisma.category.update({
       where: { id },
-      data: { name: name.trim() },
+      data: { name: parsed.data.name.trim() },
     });
     return NextResponse.json(category);
   } catch (e) {

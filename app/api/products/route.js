@@ -39,7 +39,7 @@ export async function GET(req) {
         },
       },
       orderBy: { name: "asc" },
-      take: 500,
+      take: 500, // POS membutuhkan semua produk — hard-capped di 500
     });
     return NextResponse.json(products);
   } catch (e) {

@@ -2,6 +2,11 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
+const UpdateBatchSchema = z.object({
+  expiryDate: z.string().min(1),
+});
 
 // PATCH /api/batches/[id] — edit expiryDate batch
 export async function PATCH(req, { params }) {
@@ -12,14 +17,21 @@ export async function PATCH(req, { params }) {
 
   const { id } = await params;
   try {
-    const { expiryDate } = await req.json();
-    if (!expiryDate) {
-      return NextResponse.json({ error: "expiryDate wajib diisi" }, { status: 400 });
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Request body tidak valid" }, { status: 400 });
+    }
+    const parsed = UpdateBatchSchema.safeParse(body);
+    if (!parsed.success) {
+      const details = parsed.error.issues.map((i) =>
+        i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message
+      );
+      return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
     }
 
     const batch = await prisma.productBatch.update({
       where: { id },
-      data: { expiryDate: new Date(expiryDate) },
+      data: { expiryDate: new Date(parsed.data.expiryDate) },
       include: {
         product: { select: { id: true, name: true } },
         branch:  { select: { id: true, name: true } },

@@ -2,6 +2,14 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
+const UpdateBranchSchema = z.object({
+  name:     z.string().min(1).max(100).optional(),
+  address:  z.string().max(300).optional().nullable(),
+  phone:    z.string().max(20).optional().nullable(),
+  isActive: z.boolean().optional(),
+});
 
 function adminOnly(session) {
   if (!session || session.user.role !== "ADMIN") {
@@ -55,7 +63,18 @@ export async function PATCH(req, { params }) {
   if (guard) return guard;
 
   const { id } = await params;
-  const body = await req.json();
+  const rawBody = await req.json().catch(() => null);
+  if (!rawBody || typeof rawBody !== "object") {
+    return NextResponse.json({ error: "Request body tidak valid" }, { status: 400 });
+  }
+  const parsed = UpdateBranchSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    const details = parsed.error.issues.map((i) =>
+      i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message
+    );
+    return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
+  }
+  const body = parsed.data;
 
   try {
     const branch = await prisma.branch.findUnique({ where: { id } });
