@@ -37,15 +37,28 @@ export async function PUT(req, { params }) {
       return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
     }
 
+    const { name, description, price, costPrice, categoryId, isActive } = parsed.data;
+
+    // Validasi categoryId jika disediakan
+    if (categoryId) {
+      const categoryExists = await prisma.category.findUnique({
+        where: { id: categoryId },
+        select: { id: true },
+      });
+      if (!categoryExists) {
+        return NextResponse.json({ error: "Kategori tidak ditemukan" }, { status: 404 });
+      }
+    }
+
     const product = await prisma.product.update({
       where: { id },
       data: {
-        name:        parsed.data.name.trim(),
-        description: parsed.data.description?.trim() || null,
-        price:       parsed.data.price,
-        costPrice:   parsed.data.costPrice ?? 0,
-        categoryId:  parsed.data.categoryId,
-        isActive:    parsed.data.isActive ?? true,
+        name:        name.trim(),
+        description: description?.trim() || null,
+        price:       price,
+        costPrice:   costPrice ?? 0,
+        categoryId:  categoryId,
+        isActive:    isActive ?? true,
       },
       include: {
         category: true,

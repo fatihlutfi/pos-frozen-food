@@ -8,8 +8,8 @@ const CreateBatchSchema = z.object({
   productId:      z.string().min(1),
   branchId:       z.string().min(1),
   batchCode:      z.string().min(1).max(100),
-  productionDate: z.string().optional(),
-  expiryDate:     z.string().min(1),
+  productionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}/, "Format tanggal tidak valid (YYYY-MM-DD)").optional(),
+  expiryDate:     z.string().regex(/^\d{4}-\d{2}-\d{2}/, "Format tanggal tidak valid (YYYY-MM-DD)"),
   quantity:       z.number().int().positive().max(999999),
 });
 

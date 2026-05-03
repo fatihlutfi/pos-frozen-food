@@ -46,6 +46,15 @@ export async function GET(req) {
   const dateTo   = searchParams.get("dateTo");
   const paymentMethod = searchParams.get("paymentMethod") || undefined;
 
+  // Validasi format tanggal (YYYY-MM-DD) sebelum dipakai ke new Date()
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (dateFrom && !dateRegex.test(dateFrom))
+    return NextResponse.json({ error: "Format dateFrom tidak valid (YYYY-MM-DD)" }, { status: 400 });
+  if (dateTo && !dateRegex.test(dateTo))
+    return NextResponse.json({ error: "Format dateTo tidak valid (YYYY-MM-DD)" }, { status: 400 });
+  if (paymentMethod && !["CASH", "TRANSFER_BANK", "QRIS"].includes(paymentMethod))
+    return NextResponse.json({ error: "paymentMethod tidak valid" }, { status: 400 });
+
   const dateFilter =
     dateFrom || dateTo
       ? {

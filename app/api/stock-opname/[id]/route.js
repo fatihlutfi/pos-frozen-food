@@ -2,6 +2,17 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
+const OpnameItemSchema = z.object({
+  id:          z.string().min(1),
+  physicalQty: z.number().int().nonnegative().nullable(),
+});
+
+const UpdateOpnameSchema = z.object({
+  items: z.array(OpnameItemSchema).max(2000).optional(),
+  note:  z.string().max(500).nullable().optional(),
+});
 
 // GET /api/stock-opname/[id] — detail opname + semua items
 export async function GET(req, { params }) {
@@ -99,7 +110,28 @@ export async function PATCH(req, { params }) {
       );
     }
 
-    const { items, note } = await req.json();
+    const rawBody = await req.json().catch(() => null);
+    if (!rawBody || typeof rawBody !== "object") {
+      return NextResponse.json({ error: "Request body tidak valid" }, { status: 400 });
+    }
+    const parsed = UpdateOpnameSchema.safeParse({
+      ...rawBody,
+      items: Array.isArray(rawBody.items)
+        ? rawBody.items.map((item) => ({
+            ...item,
+            physicalQty: item.physicalQty === "" || item.physicalQty == null
+              ? null
+              : typeof item.physicalQty === "string" ? parseInt(item.physicalQty) : item.physicalQty,
+          }))
+        : undefined,
+    });
+    if (!parsed.success) {
+      const details = parsed.error.issues.map((i) =>
+        i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message
+      );
+      return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
+    }
+    const { items, note } = parsed.data;
 
     // Update note jika ada
     if (note !== undefined) {
@@ -109,18 +141,16 @@ export async function PATCH(req, { params }) {
       });
     }
 
-    // Update physicalQty per item
+    // Update physicalQty per item — wrapped in transaction to avoid N+1 race conditions
     if (Array.isArray(items) && items.length > 0) {
-      for (const item of items) {
-        if (item.id == null) continue;
-        const qty = item.physicalQty === "" || item.physicalQty == null
-          ? null
-          : parseInt(item.physicalQty);
-        await prisma.stockOpnameItem.update({
-          where: { id: item.id },
-          data: { physicalQty: qty !== null && !isNaN(qty) ? qty : null },
-        });
-      }
+      await prisma.$transaction(
+        items.map((item) =>
+          prisma.stockOpnameItem.update({
+            where: { id: item.id },
+            data:  { physicalQty: item.physicalQty },
+          })
+        )
+      );
     }
 
     return NextResponse.json({ ok: true });

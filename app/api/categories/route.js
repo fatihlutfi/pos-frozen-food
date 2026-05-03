@@ -8,7 +8,10 @@ const CreateCategorySchema = z.object({
   name: z.string().min(1).max(100),
 });
 
-export async function GET() {
+export async function GET(req) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // accessible to both ADMIN and KASIR (needed for POS product filtering)
   try {
     const categories = await prisma.category.findMany({
       orderBy: { name: "asc" },

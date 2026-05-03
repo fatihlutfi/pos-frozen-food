@@ -3,6 +3,11 @@ import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import prismaTx from "@/lib/prisma-tx";
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
+const VoidTransactionSchema = z.object({
+  voidReason: z.string().min(1, "Alasan void wajib diisi").max(500),
+});
 
 // GET /api/transactions/[id]
 export async function GET(req, { params }) {
@@ -39,10 +44,16 @@ export async function PATCH(req, { params }) {
   }
 
   const { id } = await params;
-  const body = await req.json();
-
-  if (!body.voidReason?.trim()) {
-    return NextResponse.json({ error: "Alasan void wajib diisi" }, { status: 400 });
+  const rawBody = await req.json().catch(() => null);
+  if (!rawBody || typeof rawBody !== "object") {
+    return NextResponse.json({ error: "Request body tidak valid" }, { status: 400 });
+  }
+  const parsed = VoidTransactionSchema.safeParse(rawBody);
+  if (!parsed.success) {
+    const details = parsed.error.issues.map((i) =>
+      i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message
+    );
+    return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
   }
 
   // Baca transaksi + items di luar tx (pre-check)
@@ -61,7 +72,7 @@ export async function PATCH(req, { params }) {
   }
 
   try {
-    const voidReason = body.voidReason.trim();
+    const voidReason = parsed.data.voidReason.trim();
 
     const updated = await prismaTx.$transaction(async (tx) => {
       // 1. Update status ke VOIDED

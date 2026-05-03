@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import prismaTx from "@/lib/prisma-tx";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { auditLog } from "@/lib/audit";
@@ -33,34 +34,46 @@ export async function POST(req) {
     }
     const { productId, branchId, newQuantity, note } = parsed.data;
 
-    const stock = await prisma.stock.findUnique({
+    // Pre-check: pastikan stock record ada
+    const stockExists = await prisma.stock.findUnique({
       where: { productId_branchId: { productId, branchId } },
+      select: { id: true },
     });
-
-    if (!stock) {
+    if (!stockExists) {
       return NextResponse.json({ error: "Data stok tidak ditemukan" }, { status: 404 });
     }
 
-    const before = stock.quantity;
-    const after = newQuantity;
-    const change = after - before;
+    // Atomic: baca before, update, log — dalam satu transaction
+    let updatedStock;
+    let before, after, change;
 
-    const updatedStock = await prisma.stock.update({
-      where: { productId_branchId: { productId, branchId } },
-      data: { quantity: after },
-    });
+    await prismaTx.$transaction(async (tx) => {
+      const stock = await tx.stock.findUnique({
+        where: { productId_branchId: { productId, branchId } },
+        select: { quantity: true },
+      });
 
-    await prisma.stockLog.create({
-      data: {
-        type: "ADJUSTMENT",
-        change,
-        noteBefore: before,
-        noteAfter: after,
-        note: note?.trim() || "Penyesuaian stok manual",
-        productId,
-        branchId,
-        userId: session.user.id,
-      },
+      before = stock.quantity;
+      after  = newQuantity;
+      change = after - before;
+
+      updatedStock = await tx.stock.update({
+        where: { productId_branchId: { productId, branchId } },
+        data: { quantity: after },
+      });
+
+      await tx.stockLog.create({
+        data: {
+          type:       "ADJUSTMENT",
+          change,
+          noteBefore: before,
+          noteAfter:  after,
+          note:       note?.trim() || "Penyesuaian stok manual",
+          productId,
+          branchId,
+          userId:     session.user.id,
+        },
+      });
     });
 
     auditLog("UPDATE", "stock", {

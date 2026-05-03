@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import prismaTx from "@/lib/prisma-tx";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -13,8 +14,8 @@ const CreateBundleSchema = z.object({
   name:        z.string().min(1).max(200),
   bundlePrice: z.number().int().positive(),
   branchId:    z.string().min(1).optional(),
-  startDate:   z.string().optional(),
-  endDate:     z.string().optional(),
+  startDate:   z.string().regex(/^\d{4}-\d{2}-\d{2}/, "Format tanggal tidak valid (YYYY-MM-DD)").optional(),
+  endDate:     z.string().regex(/^\d{4}-\d{2}-\d{2}/, "Format tanggal tidak valid (YYYY-MM-DD)").optional(),
   isActive:    z.boolean().optional(),
   items:       z.array(BundleItemSchema).min(2).max(50),
 });
@@ -42,35 +43,34 @@ export async function PUT(req, { params }) {
       );
       return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
     }
-    const { name, bundlePrice, branchId, startDate, endDate, isActive, items } = parsed.data;
-
-    // Delete existing items, recreate with new list
-    await prisma.bundleItem.deleteMany({ where: { bundleId: id } });
-
-    const bundle = await prisma.bundle.update({
-      where: { id },
-      data: {
-        name:        name.trim(),
-        bundlePrice: bundlePrice,
-        branchId:    branchId || null,
-        startDate:   startDate ? new Date(startDate) : null,
-        endDate:     endDate   ? new Date(endDate)   : null,
-        isActive:    isActive ?? true,
-        items: {
-          create: items.map((item) => ({
-            productId: item.productId,
-            quantity:  item.quantity || 1,
-          })),
-        },
-      },
-      include: {
-        branch: { select: { id: true, name: true } },
-        items: {
-          include: {
-            product: { select: { id: true, name: true, price: true, isActive: true } },
+    // Delete existing items, recreate with new list — atomic
+    const bundle = await prismaTx.$transaction(async (tx) => {
+      await tx.bundleItem.deleteMany({ where: { bundleId: id } });
+      return tx.bundle.update({
+        where: { id },
+        data: {
+          name:        parsed.data.name.trim(),
+          bundlePrice: parsed.data.bundlePrice,
+          branchId:    parsed.data.branchId || null,
+          startDate:   parsed.data.startDate ? new Date(parsed.data.startDate) : null,
+          endDate:     parsed.data.endDate   ? new Date(parsed.data.endDate)   : null,
+          isActive:    parsed.data.isActive  ?? true,
+          items: {
+            create: parsed.data.items.map((item) => ({
+              productId: item.productId,
+              quantity:  item.quantity || 1,
+            })),
           },
         },
-      },
+        include: {
+          branch: { select: { id: true, name: true } },
+          items: {
+            include: {
+              product: { select: { id: true, name: true, price: true, isActive: true } },
+            },
+          },
+        },
+      });
     });
 
     return NextResponse.json(bundle);
