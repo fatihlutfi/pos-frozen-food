@@ -53,6 +53,7 @@ export default function POSInterface({
   const [search, setSearch] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
   const [mobileTab, setMobileTab] = useState("products"); // "products" | "cart"
+  const [bundlesOpen, setBundlesOpen] = useState(true); // collapsible bundle section
 
   // Cart state
   const [cart, setCart] = useState([]); // [{ product, quantity }]
@@ -78,6 +79,22 @@ export default function POSInterface({
     }
     window.addEventListener("toggle-pos-sidebar", handler);
     return () => window.removeEventListener("toggle-pos-sidebar", handler);
+  }, []);
+
+  // Auto-collapse bundle section on short viewports (landscape phone/tablet)
+  // and reset mobileTab to "products" when rotating to landscape
+  useEffect(() => {
+    function handleResize() {
+      const isShortViewport = window.innerHeight < 500;
+      setBundlesOpen((prev) => (isShortViewport ? false : prev));
+      // In landscape (width > height) on mobile (<lg), show products panel
+      if (window.innerWidth > window.innerHeight && window.innerWidth < 1024) {
+        setMobileTab("products");
+      }
+    }
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
   // Shift state
@@ -158,14 +175,23 @@ export default function POSInterface({
     if (mobileTab === "products") setMobileTab("cart");
   }
 
-  // Filter produk
+  // Filter + sort produk: promo aktif tampil paling atas, diurutkan by diskon terbesar
   const filteredProducts = useMemo(() => {
-    return products.filter((p) => {
-      const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
-      const matchCat = filterCategory ? p.categoryId === filterCategory : true;
-      return matchSearch && matchCat;
-    });
-  }, [products, search, filterCategory]);
+    function getBestDiscount(product) {
+      const rules = (product.discountRules || []).filter(
+        (r) => r.isActive !== false && r.branchId === selectedBranchId
+      );
+      return rules.length === 0 ? 0 : Math.max(...rules.map((r) => r.discountPercent));
+    }
+
+    return products
+      .filter((p) => {
+        const matchSearch = p.name.toLowerCase().includes(search.toLowerCase());
+        const matchCat = filterCategory ? p.categoryId === filterCategory : true;
+        return matchSearch && matchCat;
+      })
+      .sort((a, b) => getBestDiscount(b) - getBestDiscount(a));
+  }, [products, search, filterCategory, selectedBranchId]);
 
   // ── Qty discount helpers ───────────────────────────────────
 
@@ -544,40 +570,52 @@ export default function POSInterface({
             </div>
 
             {/* ── Paket Bundling ── */}
-            {activeBundles.length > 0 && (
-              <div className="shrink-0 px-4 py-3 border-b border-gray-100 bg-orange-50">
-                <p className="text-xs font-semibold text-orange-700 mb-2">🔥 Paket Bundling</p>
-                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-                  {activeBundles
-                    .filter((b) => !b.branchId || b.branchId === selectedBranchId)
-                    .map((bundle) => {
-                      const normalTotal = bundle.items.reduce((s, i) => s + (i.product.price * i.quantity), 0);
-                      const hemat       = normalTotal - bundle.bundlePrice;
-                      return (
-                        <button
-                          key={bundle.id}
-                          onClick={() => addBundleToCart(bundle)}
-                          className="shrink-0 text-left bg-white border-2 border-orange-200 hover:border-orange-400 rounded-xl p-3 w-48 transition shadow-sm cursor-pointer"
-                        >
-                          <p className="text-xs font-bold text-gray-800 line-clamp-1">{bundle.name}</p>
-                          <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">
-                            {bundle.items.map((i) => `${i.product.name} ×${i.quantity}`).join(", ")}
-                          </p>
-                          <div className="mt-2 flex items-center gap-1 flex-wrap">
-                            {normalTotal !== bundle.bundlePrice && (
-                              <span className="text-xs line-through text-gray-400">{formatRupiah(normalTotal)}</span>
-                            )}
-                            <span className="text-sm font-bold text-orange-600">{formatRupiah(bundle.bundlePrice)}</span>
-                          </div>
-                          {hemat > 0 && (
-                            <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-medium">
-                              Hemat {formatRupiah(hemat)}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                </div>
+            {activeBundles.filter((b) => !b.branchId || b.branchId === selectedBranchId).length > 0 && (
+              <div className="shrink-0 border-b border-gray-100 bg-orange-50">
+                <button
+                  onClick={() => setBundlesOpen((v) => !v)}
+                  className="w-full px-4 py-2 flex items-center justify-between cursor-pointer"
+                >
+                  <span className="text-xs font-semibold text-orange-700">
+                    🔥 Paket Bundling ({activeBundles.filter((b) => !b.branchId || b.branchId === selectedBranchId).length})
+                  </span>
+                  <span className="text-orange-500 text-xs">{bundlesOpen ? "▲" : "▼"}</span>
+                </button>
+                {bundlesOpen && (
+                  <div className="px-4 pb-3">
+                    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+                      {activeBundles
+                        .filter((b) => !b.branchId || b.branchId === selectedBranchId)
+                        .map((bundle) => {
+                          const normalTotal = bundle.items.reduce((s, i) => s + (i.product.price * i.quantity), 0);
+                          const hemat       = normalTotal - bundle.bundlePrice;
+                          return (
+                            <button
+                              key={bundle.id}
+                              onClick={() => addBundleToCart(bundle)}
+                              className="shrink-0 text-left bg-white border-2 border-orange-200 hover:border-orange-400 rounded-xl p-3 w-48 transition shadow-sm cursor-pointer"
+                            >
+                              <p className="text-xs font-bold text-gray-800 line-clamp-1">{bundle.name}</p>
+                              <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">
+                                {bundle.items.map((i) => `${i.product.name} ×${i.quantity}`).join(", ")}
+                              </p>
+                              <div className="mt-2 flex items-center gap-1 flex-wrap">
+                                {normalTotal !== bundle.bundlePrice && (
+                                  <span className="text-xs line-through text-gray-400">{formatRupiah(normalTotal)}</span>
+                                )}
+                                <span className="text-sm font-bold text-orange-600">{formatRupiah(bundle.bundlePrice)}</span>
+                              </div>
+                              {hemat > 0 && (
+                                <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded-full font-medium">
+                                  Hemat {formatRupiah(hemat)}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
