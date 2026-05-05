@@ -108,12 +108,21 @@ function exportCSV(transactionList, branchLabel, dateFrom, dateTo) {
     t.itemCount,
   ]);
 
+  // Baris total di bagian bawah
+  const totalSubtotal  = transactionList.reduce((s, t) => s + t.subtotal,      0);
+  const totalDiskon    = transactionList.reduce((s, t) => s + t.discountAmount, 0);
+  const totalPenjualan = transactionList.reduce((s, t) => s + t.grandTotal,     0);
+  const totalItem      = transactionList.reduce((s, t) => s + t.itemCount,      0);
+  const summaryRow     = ["", "", "", "", "TOTAL", totalSubtotal, totalDiskon, totalPenjualan, totalItem];
+
   const csvContent = [
     `Laporan Penjualan - ${branchLabel}`,
     `Periode: ${fmtDateLong(dateFrom)} s/d ${fmtDateLong(dateTo)}`,
     "",
     headers.join(";"),
     ...rows.map((r) => r.join(";")),
+    "",
+    summaryRow.join(";"),
   ].join("\n");
 
   const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
