@@ -10,6 +10,7 @@ const CreateProductSchema = z.object({
   price:       z.number().int().positive(),
   costPrice:   z.number().int().nonnegative().optional(),
   categoryId:  z.string().min(1),
+  imageUrl:    z.string().url().max(2000).optional().or(z.literal("")),
 });
 
 export async function GET(req) {
@@ -72,7 +73,7 @@ export async function POST(req) {
       return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
     }
 
-    const { name, description, price, costPrice, categoryId } = parsed.data;
+    const { name, description, price, costPrice, categoryId, imageUrl } = parsed.data;
 
     // name, price, categoryId sudah divalidasi Zod di atas — cek kategori exist
     const category = await prisma.category.findUnique({ where: { id: categoryId } });
@@ -88,6 +89,7 @@ export async function POST(req) {
         price,
         costPrice: costPrice ?? 0,
         categoryId,
+        imageUrl: imageUrl?.trim() || null,
         stocks: {
           create: branches.map((b) => ({
             branchId: b.id,

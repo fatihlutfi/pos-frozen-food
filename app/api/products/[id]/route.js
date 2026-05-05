@@ -11,6 +11,7 @@ const UpdateProductSchema = z.object({
   costPrice:   z.number().int().nonnegative().optional(),
   categoryId:  z.string().min(1).optional(),
   isActive:    z.boolean().optional(),
+  imageUrl:    z.string().url().max(2000).optional().or(z.literal("")),
 });
 
 export async function PUT(req, { params }) {
@@ -37,7 +38,7 @@ export async function PUT(req, { params }) {
       return NextResponse.json({ error: "Input tidak valid", details }, { status: 400 });
     }
 
-    const { name, description, price, costPrice, categoryId, isActive } = parsed.data;
+    const { name, description, price, costPrice, categoryId, isActive, imageUrl } = parsed.data;
 
     // Validasi categoryId jika disediakan
     if (categoryId) {
@@ -59,6 +60,7 @@ export async function PUT(req, { params }) {
         costPrice:   costPrice ?? 0,
         categoryId:  categoryId,
         isActive:    isActive ?? true,
+        imageUrl:    imageUrl?.trim() || null,
       },
       include: {
         category: true,
