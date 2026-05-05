@@ -119,6 +119,12 @@ export default function POSInterface({
     return s ? s.quantity : 0;
   }
 
+  // Ambil lowStockAlert threshold untuk cabang yang dipilih (default 10)
+  function getLowStockAlert(product) {
+    const s = product.stocks.find((s) => s.branchId === selectedBranchId);
+    return s?.lowStockAlert ?? 10;
+  }
+
   // Update stok lokal setelah transaksi berhasil — tanpa re-fetch ke server
   function deductLocalStock(soldItems, branchId) {
     setProducts((prev) =>
@@ -622,12 +628,14 @@ export default function POSInterface({
             {/* Grid produk */}
             <div className="flex-1 overflow-y-auto p-3 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 content-start">
               {filteredProducts.map((product) => {
-                const stock      = getStockForBranch(product);
-                const inCart     = cart.find((i) => i.product.id === product.id)?.quantity ?? 0;
-                const outOfStock = stock <= 0;
-                const expiryInfo = getProductExpiryInfo(product.id);
-                const isExpired  = expiryInfo?.blocked;
-                const disabled   = outOfStock || isExpired;
+                const stock        = getStockForBranch(product);
+                const lowAlert     = getLowStockAlert(product);
+                const inCart       = cart.find((i) => i.product.id === product.id)?.quantity ?? 0;
+                const outOfStock   = stock <= 0;
+                const isLowStock   = !outOfStock && stock <= lowAlert;
+                const expiryInfo   = getProductExpiryInfo(product.id);
+                const isExpired    = expiryInfo?.blocked;
+                const disabled     = outOfStock || isExpired;
 
                 return (
                   <button
@@ -680,8 +688,8 @@ export default function POSInterface({
                         </p>
                       ) : null;
                     })()}
-                    <p className={`text-xs mt-1 font-medium ${isExpired ? "text-black" : outOfStock ? "text-red-500" : stock <= 20 ? "text-orange-500" : "text-gray-400"}`}>
-                      {isExpired ? "Tidak bisa dijual" : outOfStock ? "Stok habis" : `Stok: ${stock}`}
+                    <p className={`text-xs mt-1 font-medium ${isExpired ? "text-black" : outOfStock ? "text-red-500" : isLowStock ? "text-orange-500" : "text-gray-400"}`}>
+                      {isExpired ? "Tidak bisa dijual" : outOfStock ? "Stok habis" : isLowStock ? `⚠ Stok: ${stock}` : `Stok: ${stock}`}
                     </p>
                   </button>
                 );

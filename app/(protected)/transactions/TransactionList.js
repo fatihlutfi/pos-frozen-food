@@ -24,6 +24,8 @@ const METHOD_LABEL = {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 50;
+
 export default function TransactionList({ initialTransactions, branches, isAdmin, defaultBranchId }) {
   const [transactions, setTransactions] = useState(initialTransactions);
   const [loading, setLoading]           = useState(false);
@@ -43,9 +45,14 @@ export default function TransactionList({ initialTransactions, branches, isAdmin
   const [filterBranch,  setFilterBranch]  = useState("");
   const [filterStatus,  setFilterStatus]  = useState("");
 
+  // Pagination state
+  const [page,      setPage]      = useState(1);
+  const [totalRows, setTotalRows] = useState(initialTransactions.length);
+  const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
+
   // ── Fetch ──────────────────────────────────────────────────────────────────
 
-  const fetchTransactions = useCallback(async (params = {}) => {
+  const fetchTransactions = useCallback(async (params = {}, targetPage = 1) => {
     setLoading(true);
     try {
       const sp = new URLSearchParams();
@@ -53,22 +60,32 @@ export default function TransactionList({ initialTransactions, branches, isAdmin
       if (params.dateTo)   sp.set("dateTo",   params.dateTo);
       if (params.branchId) sp.set("branchId", params.branchId);
       if (params.status)   sp.set("status",   params.status);
+      sp.set("limit",  String(PAGE_SIZE));
+      sp.set("offset", String((targetPage - 1) * PAGE_SIZE));
       const res  = await fetch(`/api/transactions?${sp.toString()}`);
       const data = await res.json();
-      if (res.ok) setTransactions(data);
+      if (res.ok) {
+        setTransactions(data);
+        setTotalRows(parseInt(res.headers.get("X-Total-Count") || "0", 10));
+        setPage(targetPage);
+      }
     } finally {
       setLoading(false);
     }
   }, []);
 
   function handleFilter() {
-    fetchTransactions({ dateFrom, dateTo, branchId: filterBranch, status: filterStatus });
+    fetchTransactions({ dateFrom, dateTo, branchId: filterBranch, status: filterStatus }, 1);
   }
 
   function handleReset() {
     setDateFrom(today); setDateTo(today);
     setFilterBranch(""); setFilterStatus("");
-    fetchTransactions({ dateFrom: today, dateTo: today });
+    fetchTransactions({ dateFrom: today, dateTo: today }, 1);
+  }
+
+  function handlePageChange(newPage) {
+    fetchTransactions({ dateFrom, dateTo, branchId: filterBranch, status: filterStatus }, newPage);
   }
 
   // ── Open / Close detail ────────────────────────────────────────────────────
@@ -250,6 +267,31 @@ export default function TransactionList({ initialTransactions, branches, isAdmin
           </div>
         )}
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between bg-white rounded-xl border border-gray-200 px-4 py-3">
+          <p className="text-sm text-gray-500">
+            Halaman {page} dari {totalPages} ({totalRows} transaksi)
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handlePageChange(page - 1)}
+              disabled={page <= 1 || loading}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+            >
+              ← Sebelumnya
+            </button>
+            <button
+              onClick={() => handlePageChange(page + 1)}
+              disabled={page >= totalPages || loading}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+            >
+              Berikutnya →
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Detail Modal ── */}
       {selected && (

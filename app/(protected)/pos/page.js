@@ -71,9 +71,11 @@ export default async function POSPage() {
     prisma.bundle.findMany({
       where: {
         isActive: true,
-        OR: [{ startDate: null }, { startDate: { lte: new Date() } }],
-        AND: [{ OR: [{ endDate: null }, { endDate: { gte: startOfTodayWIB() } }] }],
-        ...(branchId ? { OR: [{ branchId }, { branchId: null }] } : {}),
+        AND: [
+          { OR: [{ startDate: null }, { startDate: { lte: new Date() } }] },
+          { OR: [{ endDate: null }, { endDate: { gte: startOfTodayWIB() } }] },
+          ...(branchId ? [{ OR: [{ branchId }, { branchId: null }] }] : []),
+        ],
       },
       include: {
         items: {

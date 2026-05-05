@@ -20,11 +20,18 @@ function LoginForm() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState(
-    urlError === "INACTIVE_BRANCH"
-      ? "Cabang Anda sedang tidak aktif. Hubungi administrator."
-      : ""
-  );
+  function parseUrlError(code) {
+    if (!code) return "";
+    if (code === "INACTIVE_BRANCH") return "Cabang Anda sedang tidak aktif. Hubungi administrator.";
+    if (code.startsWith("RATE_LIMIT")) {
+      const secs = parseInt(code.split(":")[1]);
+      const mins = Math.ceil((secs || 300) / 60);
+      return `Terlalu banyak percobaan login. Coba lagi dalam ${mins} menit.`;
+    }
+    return "";
+  }
+
+  const [error, setError] = useState(parseUrlError(urlError));
   const [loading, setLoading] = useState(false);
 
   // Bersihkan sesi lama saat redirect paksa karena cabang nonaktif
@@ -49,6 +56,13 @@ function LoginForm() {
 
     if (result?.error === "INACTIVE_BRANCH") {
       setError("Cabang Anda sedang tidak aktif. Hubungi administrator.");
+      return;
+    }
+
+    if (result?.error?.startsWith("RATE_LIMIT")) {
+      const secs = parseInt(result.error.split(":")[1]);
+      const mins = Math.ceil((secs || 300) / 60);
+      setError(`Terlalu banyak percobaan login. Coba lagi dalam ${mins} menit.`);
       return;
     }
 
