@@ -6,7 +6,7 @@ import Link from "next/link";
 
 export const metadata = { title: "Dashboard — POS Frozen Food" };
 
-const LOW_STOCK_THRESHOLD = 20;
+const LOW_STOCK_MAX_FETCH = 100; // ambil semua stok di bawah nilai ini, filter by lowStockAlert di JS
 
 // ── WIB (UTC+7) timezone helpers ──────────────────────────────────────────
 const WIB_MS = 7 * 60 * 60 * 1000;
@@ -64,11 +64,11 @@ async function getDashboardStats(session) {
       _sum: { grandTotal: true },
     }),
 
-    // Stok menipis — filter di SQL (quantity <= 20), sudah sorted
+    // Stok menipis — fetch dengan batas longgar, filter by lowStockAlert masing-masing di JS
     prisma.stock.findMany({
-      where: { ...branchFilter, quantity: { lte: LOW_STOCK_THRESHOLD } },
+      where: { ...branchFilter, quantity: { lte: LOW_STOCK_MAX_FETCH } },
       select: {
-        quantity:     true,
+        quantity:      true,
         lowStockAlert: true,
         product: { select: { name: true } },
         branch:  { select: { name: true } },
@@ -125,11 +125,11 @@ async function getDashboardStats(session) {
     prisma.bundle.findMany({
       where: {
         isActive: true,
-        OR: [{ startDate: null }, { startDate: { lte: new Date() } }],
-        AND: [{ OR: [{ endDate: null }, { endDate: { gte: startOfTodayWIB() } }] }],
-        ...(isAdmin ? {} : {
-          OR: [{ branchId: session.user.branchId }, { branchId: null }],
-        }),
+        AND: [
+          { OR: [{ startDate: null }, { startDate: { lte: new Date() } }] },
+          { OR: [{ endDate: null }, { endDate: { gte: startOfTodayWIB() } }] },
+          ...(isAdmin ? [] : [{ OR: [{ branchId: session.user.branchId }, { branchId: null }] }]),
+        ],
       },
       include: {
         items: { include: { product: { select: { name: true, price: true } } } },
@@ -174,11 +174,14 @@ async function getDashboardStats(session) {
     return d >= 0 && d < 30;
   }).length;
 
+  // Filter lowStockItems by each stock's own lowStockAlert threshold
+  const filteredLowStock = lowStockItems.filter((s) => s.quantity <= s.lowStockAlert);
+
   return {
     todaySales:       todayStats._sum.grandTotal ?? 0,
     todayTransactions: todayStats._count.id ?? 0,
     monthSales:       monthStats._sum.grandTotal ?? 0,
-    lowStockItems,
+    lowStockItems:    filteredLowStock,
     recentTransactions,
     branchCount,
     todayNetProfit,

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Modal from "@/components/Modal";
 import { formatRupiah } from "@/lib/format";
 
-const EMPTY_FORM = { name: "", description: "", price: "", costPrice: "", categoryId: "" };
+const EMPTY_FORM = { name: "", description: "", price: "", costPrice: "", categoryId: "", imageUrl: "" };
 
 export default function ProductManager({
   initialProducts, categories, branches, isAdmin, currentBranchId,
@@ -73,6 +73,7 @@ export default function ProductManager({
       price:       product.price,
       costPrice:   product.costPrice ?? 0,
       categoryId:  product.categoryId,
+      imageUrl:    product.imageUrl || "",
     });
     setError("");
     setModal({ open: true, mode: "edit", product });
@@ -622,6 +623,27 @@ export default function ProductManager({
               rows={2}
               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              URL Gambar <span className="text-gray-400 font-normal">(opsional)</span>
+            </label>
+            <input
+              type="url"
+              value={form.imageUrl}
+              onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
+              placeholder="https://..."
+              className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {form.imageUrl && (
+              <img
+                src={form.imageUrl}
+                alt="Preview"
+                className="mt-2 h-20 w-20 object-cover rounded-lg border border-gray-200"
+                onError={(e) => { e.target.style.display = "none"; }}
+              />
+            )}
           </div>
 
           <div className="flex gap-3 pt-1">
