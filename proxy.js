@@ -40,8 +40,13 @@ function checkLimit(store, key, max) {
 export default async function middleware(req) {
   const { pathname } = req.nextUrl;
 
+  // ── NextAuth internal routes — jangan disentuh middleware ────────────────
+  if (pathname.startsWith("/api/auth/")) {
+    return NextResponse.next();
+  }
+
   // ── Rate limiting untuk API routes ────────────────────────────────────────
-  if (pathname.startsWith("/api/") && !pathname.startsWith("/api/auth/")) {
+  if (pathname.startsWith("/api/")) {
     const ip      = getClientIP(req);
     const isWrite = ["POST", "PUT", "PATCH", "DELETE"].includes(req.method);
     const store   = isWrite ? writeStore : readStore;
