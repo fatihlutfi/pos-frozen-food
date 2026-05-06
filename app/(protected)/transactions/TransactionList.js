@@ -30,7 +30,7 @@ export default function TransactionList({ initialTransactions, branches, isAdmin
   const [transactions, setTransactions] = useState(initialTransactions);
   const [loading, setLoading]           = useState(false);
   const [selected, setSelected]         = useState(null);
-  const [printSize, setPrintSize]       = useState("80mm");
+  const [printSize, setPrintSize]       = useState("58mm");
 
   // Void states
   const [voidMode,   setVoidMode]   = useState(false);

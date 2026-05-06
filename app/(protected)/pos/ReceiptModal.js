@@ -11,7 +11,7 @@ const METHOD_LABEL = {
 };
 
 export default function ReceiptModal({ transaction, onClose, onNewTransaction }) {
-  const [paperSize, setPaperSize] = useState("80mm");
+  const [paperSize, setPaperSize] = useState("58mm");
 
   if (!transaction) return null;
 
@@ -77,15 +77,23 @@ export default function ReceiptModal({ transaction, onClose, onNewTransaction })
           >
             <div className="px-3 py-3 space-y-0.5">
               {/* Store header */}
-              <p className="text-center font-extrabold tracking-wide" style={{ fontSize: "1.15em" }}>
-                POS FROZEN FOOD
+              <p className="text-center font-extrabold tracking-widest" style={{ fontSize: "1.2em" }}>
+                SURYA FROZEN
               </p>
-              <p className="text-center font-bold">{branch.name}</p>
+              <p className="text-center text-gray-500 italic" style={{ fontSize: "0.88em" }}>
+                Lengkap. Murah. Dekat.
+              </p>
+              <p className="text-center font-semibold">{branch.name}</p>
               {branch.address && (
                 <p className="text-center text-gray-500" style={{ fontSize: "0.88em" }}>
                   {branch.address}
                 </p>
               )}
+
+              <Dash />
+
+              <p className="text-center" style={{ fontSize: "0.88em" }}>WA: +6281973205141</p>
+              <p className="text-center" style={{ fontSize: "0.88em" }}>Free Ongkir | Terima Pesanan</p>
 
               <Dash />
 
