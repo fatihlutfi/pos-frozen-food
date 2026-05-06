@@ -83,7 +83,6 @@ export default function ReceiptModal({ transaction, onClose, onNewTransaction })
               <p className="text-center text-gray-500 italic" style={{ fontSize: "0.88em" }}>
                 Lengkap. Murah. Dekat.
               </p>
-              <p className="text-center font-semibold">{branch.name}</p>
               {branch.address && (
                 <p className="text-center text-gray-500" style={{ fontSize: "0.88em" }}>
                   {branch.address}
